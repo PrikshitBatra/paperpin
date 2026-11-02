@@ -65,16 +65,19 @@ private func sendRegisteredHotKey() -> OSStatus {
 
 @MainActor
 @discardableResult
-private func choosePopupItem(_ title: String, at point: NSPoint, in view: NSView) async -> [String] {
+private func choosePopupItem(_ title: String, at point: NSPoint, in view: NSView,
+                             performAction: Bool = true, inspect: ((NSMenuItem) -> Void)? = nil) async -> [String] {
     var titles: [String] = []
     let token = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { event in
         guard let menu = event.object as? NSMenu else { return }
         CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
+            menu.update()
             let index = menu.items.firstIndex { $0.title.localizedCaseInsensitiveCompare(title) == .orderedSame }
             titles = menu.items.map(\.title)
             print("MENU", titles)
+            if let index { inspect?(menu.items[index]) }
             menu.cancelTracking()
-            if let index {
+            if performAction, let index {
                 menu.performActionForItem(at: index)
             }
         }
@@ -186,6 +189,103 @@ private func checkBoardLayout(_ delegate: AppDelegate, directory: URL, check: (B
           "floating and sidebar layout choices are saved")
 }
 
+private func containsGlassMaterial(_ view: NSView) -> Bool {
+    if view is NSVisualEffectView { return true }
+    if let glassClass = NSClassFromString("NSGlassEffectView"), view.isKind(of: glassClass) { return true }
+    return view.subviews.contains(where: containsGlassMaterial)
+}
+
+@MainActor
+private func checkGlassUnavailable(_ delegate: AppDelegate, directory: URL, check: (Bool, String) -> Void) async {
+    let appearance = AppearanceSettings.shared
+    let store = delegate.store
+    let coordinator = delegate.minimalWindows!
+    let relaunch = ProcessInfo.processInfo.environment["PAPERPIN_VERIFY_RELAUNCH"] == "1"
+    let savedText = "Available without glass.\nSaved after editing."
+    check(!appearance.nativeGlassAvailable && !appearance.effectiveGlass,
+          "unavailable native glass always selects paper appearance")
+    check(appearance.glassEnabled && UserDefaults.standard.bool(forKey: "LiquidGlassEnabled")
+          && appearance.glassStatus?.isEmpty == false,
+          "unavailable glass retains the saved enabled preference and explains availability")
+
+    let viewMenu = NSApp.mainMenu!.item(withTitle: "View")!.submenu!
+    viewMenu.update()
+    if let item = viewMenu.item(withTitle: "Liquid Glass") {
+        check(!item.isEnabled && item.state == .off && item.toolTip == appearance.glassStatus,
+              "View Liquid Glass item is disabled off and explanatory")
+        if let action = item.action { _ = NSApp.sendAction(action, to: item.target, from: item) }
+        check(appearance.glassEnabled && !appearance.effectiveGlass
+              && UserDefaults.standard.bool(forKey: "LiquidGlassEnabled"),
+              "direct menu action cannot change an unavailable glass preference")
+    } else { check(false, "View Liquid Glass menu item exists") }
+
+    if relaunch {
+        check(delegate.navigation.minimalMode && coordinator.windows.count == 1
+              && store.board.notes.first?.body == savedText && store.pendingCount == 1,
+              "paper desktop restores its selection text and checklist after relaunch")
+    }
+    delegate.showWindow()
+    delegate.window.setContentSize(NSSize(width: 950, height: 612))
+    await pause(300)
+    if let content = delegate.window.contentView {
+        check(delegate.window.isOpaque && !containsGlassMaterial(content),
+              "unsupported board is opaque and contains no glass or frosted material")
+        var state: (enabled: Bool, value: NSControl.StateValue)?
+        let titles = await choosePopupItem("Liquid Glass", at: NSPoint(x: delegate.window.frame.width - 183, y: 93),
+                                          in: content, performAction: false) { item in
+            state = (item.isEnabled, item.state)
+        }
+        check(state?.enabled == false && state?.value == .off
+              && titles.contains(appearance.glassStatus ?? ""),
+              "board layout glass option is disabled off and explains unsupported native glass")
+        snapshot(delegate.window, directory.appendingPathComponent("glass-unavailable-board.png"))
+    } else { check(false, "unsupported board content is available") }
+
+    delegate.statusItem.button?.performClick(nil)
+    await pause(300)
+    if let panel = delegate.popover.contentViewController?.view {
+        var state: (enabled: Bool, value: NSControl.StateValue)?
+        let titles = await choosePopupItem("Liquid Glass", at: NSPoint(x: 284, y: 25),
+                                          in: panel, performAction: false) { item in
+            state = (item.isEnabled, item.state)
+        }
+        check(state?.enabled == false && state?.value == .off
+              && titles.contains(appearance.glassStatus ?? ""),
+              "quick panel glass option is disabled off and explains unsupported native glass")
+    } else { check(false, "unsupported quick panel opens") }
+    delegate.popover.performClose(nil)
+
+    let id = store.board.notes[0].id
+    if !relaunch {
+        store.editNote(id) { $0.title = "Paper works everywhere"; $0.body = "Available without glass."; $0.draft = "Keep the content" }
+        store.addDraft(on: id)
+        delegate.navigation.minimalMode = true
+    }
+    coordinator.showNote(id)
+    await pause(300)
+    guard let sticky = coordinator.windows[id], let content = sticky.contentView,
+          let editor = nativeEditor(in: content) else {
+        check(false, "unsupported native desktop editor exists"); return
+    }
+    check(sticky.isOpaque && !containsGlassMaterial(content),
+          "unsupported desktop note is opaque and contains no glass or frosted material")
+    if !relaunch {
+        sticky.makeFirstResponder(editor)
+        editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+        editor.insertText("\nSaved after editing.", replacementRange: NSRange(location: NSNotFound, length: 0))
+        await awaitSave(store)
+        check(store.note(id)?.body == savedText && BoardStore(file: store.file).note(id)?.body == savedText,
+              "native editing and saving work while glass is unavailable")
+    } else {
+        check(editor.string == savedText, "restored paper editor contains the saved native edits")
+    }
+    snapshot(sticky, directory.appendingPathComponent("glass-unavailable-desktop.png"))
+    delegate.window.performClose(nil)
+    coordinator.flushAndPersist()
+    check(appearance.glassEnabled && UserDefaults.standard.bool(forKey: "LiquidGlassEnabled"),
+          "using paper does not erase the preference for a supported environment")
+}
+
 @MainActor
 func runWindowChecksIfRequested(_ delegate: AppDelegate) {
     guard let directory = ProcessInfo.processInfo.environment["PAPERPIN_TEST_DIRECTORY"] else { return }
@@ -216,6 +316,13 @@ func runWindowChecksIfRequested(_ delegate: AppDelegate) {
         func check(_ ok: Bool, _ name: String) {
             print("\(ok ? "PASS" : "FAIL") \(name)"); fflush(stdout)
             if !ok { failures += 1 }
+        }
+        if ProcessInfo.processInfo.environment["PAPERPIN_CHECK_GLASS_UNAVAILABLE"] == "1" {
+            await checkGlassUnavailable(delegate, directory: url, check: check)
+            print("FINISHED \(failures) glass availability failures")
+            fflush(stdout)
+            NSApp.terminate(nil)
+            return
         }
         if ProcessInfo.processInfo.environment["PAPERPIN_CHECK_POLISH"] == "1" {
             await checkPolish(delegate, directory: url, check: check)

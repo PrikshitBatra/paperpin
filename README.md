@@ -18,7 +18,7 @@ Press **Control–Command–S** to hide or show the sidebar. The sidebar and Min
 
 ## Appearance and launch
 
-**View → Liquid Glass** changes the entire app’s appearance with pearl light surfaces, deep slate dark surfaces, rounded cards, blue-violet controls, and restrained note-color accents. It is off by default and temporarily pauses during Low Power Mode or Reduce Transparency. macOS 26+ uses native Liquid Glass; older supported systems use native frosted materials. The [Liquid Glass Studio](https://github.com/iyinchao/liquid-glass-studio) project is the visual reference; Paperpin uses native AppKit rendering without its web renderer or continuous animation loop.
+**View → Liquid Glass** changes the entire app’s appearance with pearl light surfaces, deep slate dark surfaces, rounded cards, blue-violet controls, and restrained note-color accents. It is off by default and temporarily pauses during Low Power Mode or Reduce Transparency. It requires macOS 26+ with native glass support, including supported Intel Macs. On older or unsupported systems, the toggle is greyed out and unchecked in every menu, an explanation is shown, and Paperpin uses its ordinary opaque appearance. A saved glass preference is retained for a later supported OS, without applying any glass or frosted effect while unsupported. The [Liquid Glass Studio](https://github.com/iyinchao/liquid-glass-studio) project is the visual reference; Paperpin uses native AppKit rendering without its web renderer or continuous animation loop.
 
 **Paperpin → Launch at Login** registers the installed app using macOS Service Management. If approval is needed, use **Login Items Settings…**. Disabling it in System Settings remains respected. Register the installed app, not a temporary build; test builds never register login items. Launch at login does not prevent sleep or restart an app that was explicitly quit.
 
@@ -56,8 +56,11 @@ The UI checks use a separate test app and temporary board. Quit Paperpin before 
 PAPERPIN_CHECK_LAYOUT=1 ./Tests/run-ui.zsh
 PAPERPIN_CHECK_MINIMAL=1 ./Tests/run-ui.zsh
 PAPERPIN_CHECK_POLISH=1 ./Tests/run-ui.zsh
+PAPERPIN_CHECK_GLASS_UNAVAILABLE=1 ./Tests/run-ui.zsh
 ```
 
 The layout suite checks normal board controls, floating, sidebar, minimize/reopen behavior, preference restoration, and migration away from the retired whole-board desktop setting. The minimal-mode suite checks native editing, shared notes, window restoration, fullscreen transitions, simulated display removal, and lifecycle saves. Screenshots and logs are written under `.build/tests/`.
+
+The glass-unavailable suite simulates absent native support in the isolated QA app, checking disabled controls, opaque rendering, and preserved notes/preferences across relaunch. The simulation override is excluded from release builds.
 
 `Tools/TypingBenchmark.swift` compares atomic save counts against the historical store (compile the historical version with `-D PAPERPIN_BASELINE`). `Tools/measure-idle.py PID --output result.json` measures five minutes of process CPU, wakeups, memory, and disk counters after a 30-second warmup. These process counters do not isolate WindowServer/GPU energy or predict battery life.

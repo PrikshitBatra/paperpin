@@ -244,7 +244,11 @@ struct BoardLayoutOptions: View {
             navigation.sidebarHidden.toggle()
         }
         Divider()
-        Toggle("Liquid Glass", isOn: $appearance.glassEnabled)
+        Toggle("Liquid Glass", isOn: Binding(
+            get: { appearance.nativeGlassAvailable && appearance.glassEnabled },
+            set: appearance.setGlassEnabled))
+            .disabled(!appearance.nativeGlassAvailable)
+            .help(appearance.glassStatus ?? "Use Liquid Glass surfaces")
         if let status = appearance.glassStatus { Text(status) }
         Toggle("Launch at login", isOn: Binding(get: { loginItem.isEnabled }, set: loginItem.setEnabled))
         if let message = loginItem.message {

@@ -21,6 +21,11 @@ if [[ "${PAPERPIN_CHECK_LAYOUT:-0}" == "1" ]]; then
     # Simulate an upgrade from a version that put the entire board on the desktop.
     defaults write local.paperpin.windowchecks DesktopMode -bool true
 fi
+if [[ "${PAPERPIN_CHECK_GLASS_UNAVAILABLE:-0}" == "1" ]]; then
+    # The override is read only in QA builds, before AppearanceSettings.shared initializes.
+    export PAPERPIN_NATIVE_GLASS_UNAVAILABLE=1
+    defaults write local.paperpin.windowchecks LiquidGlassEnabled -bool true
+fi
 PAPERPIN_TEST_DIRECTORY="$qa_dir" "$qa_app/Contents/MacOS/Paperpin" > "$qa_dir/results.txt" 2>&1
 cat "$qa_dir/results.txt"
 if /usr/bin/grep -q "^FAIL" "$qa_dir/results.txt"; then exit 1; fi

@@ -7,8 +7,9 @@ struct AppearancePolicy {
     let lowPowerMode: Bool
     let reduceTransparency: Bool
     let reduceMotion: Bool
+    let nativeGlassAvailable: Bool
 
-    var effectiveGlass: Bool { glassEnabled && !lowPowerMode && !reduceTransparency }
+    var effectiveGlass: Bool { nativeGlassAvailable && glassEnabled && !lowPowerMode && !reduceTransparency }
     var animationsAllowed: Bool { !lowPowerMode && !reduceMotion }
 }
 
@@ -21,25 +22,28 @@ final class AppearanceSettings: ObservableObject {
     @Published private(set) var lowPowerMode: Bool
     @Published private(set) var reduceTransparency: Bool
     @Published private(set) var reduceMotion: Bool
+    let nativeGlassAvailable: Bool
     private let defaults: UserDefaults
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
     var policy: AppearancePolicy {
         AppearancePolicy(glassEnabled: glassEnabled, lowPowerMode: lowPowerMode,
-                         reduceTransparency: reduceTransparency, reduceMotion: reduceMotion)
+                         reduceTransparency: reduceTransparency, reduceMotion: reduceMotion,
+                         nativeGlassAvailable: nativeGlassAvailable)
     }
     var effectiveGlass: Bool { policy.effectiveGlass }
     var animationsAllowed: Bool { policy.animationsAllowed }
     var glassStatus: String? {
+        guard nativeGlassAvailable else { return "Liquid Glass requires macOS 26 or later with native glass support." }
         guard glassEnabled else { return nil }
         if reduceTransparency { return "Glass paused: Reduce Transparency is on" }
         if lowPowerMode { return "Glass paused: Low Power Mode is on" }
-        if #available(macOS 26.0, *) { return nil }
-        return "Using frosted glass on this version of macOS"
+        return nil
     }
 
-    init(defaults: UserDefaults = .standard, observeSystem: Bool = true) {
+    init(defaults: UserDefaults = .standard, observeSystem: Bool = true, nativeGlassAvailable: Bool? = nil) {
         self.defaults = defaults
+        self.nativeGlassAvailable = nativeGlassAvailable ?? Self.systemNativeGlassAvailable
         glassEnabled = defaults.bool(forKey: "LiquidGlassEnabled")
         lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
         reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
@@ -47,6 +51,20 @@ final class AppearanceSettings: ObservableObject {
         guard observeSystem else { return }
         observe(NotificationCenter.default, .NSProcessInfoPowerStateDidChange)
         observe(NSWorkspace.shared.notificationCenter, NSWorkspace.accessibilityDisplayOptionsDidChangeNotification)
+    }
+
+    func setGlassEnabled(_ enabled: Bool) {
+        guard nativeGlassAvailable else { return }
+        glassEnabled = enabled
+    }
+
+    private static var systemNativeGlassAvailable: Bool {
+        #if PAPERPIN_QA
+        if ProcessInfo.processInfo.environment["PAPERPIN_NATIVE_GLASS_UNAVAILABLE"] == "1" { return false }
+        #endif
+        // Native glass is available on supported Intel Macs as well as Apple silicon.
+        if #available(macOS 26.0, *) { return NSClassFromString("NSGlassEffectView") != nil }
+        return false
     }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name) {
@@ -78,12 +96,8 @@ private struct NativeGlassSurface: NSViewRepresentable {
             glass.contentView = NSView()
             return glass
         }
-        let effect = NSVisualEffectView()
-        effect.material = .underWindowBackground
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        return effect
+        // Unsupported systems use the opaque PaperSurface branch instead.
+        return NSView()
     }
 
     func updateNSView(_ view: NSView, context: Context) {
@@ -91,9 +105,6 @@ private struct NativeGlassSurface: NSViewRepresentable {
         if #available(macOS 26.0, *), let glass = view as? NSGlassEffectView {
             glass.cornerRadius = cornerRadius
             glass.tintColor = nil
-        } else {
-            view.layer?.cornerRadius = cornerRadius
-            view.layer?.masksToBounds = true
         }
     }
 }
