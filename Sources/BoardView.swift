@@ -3,6 +3,7 @@ import SwiftUI
 struct BoardView: View {
     @ObservedObject var store: BoardStore
     @ObservedObject var navigation: Navigation
+    @ObservedObject private var appearance = AppearanceSettings.shared
     let openQuick: () -> Void
     @FocusState private var focus: BoardField?
     @State private var deleting: Sticky?
@@ -34,8 +35,9 @@ struct BoardView: View {
                 Rectangle().fill(Ink.line).frame(height: 1)
                 if let issue = store.diskIssue { diskNotice(issue) }
                 content
-            }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Ink.canvas)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .paperSurface(color: Ink.canvas)
         .foregroundStyle(Ink.text).tint(Ink.accent)
         .ignoresSafeArea()
         .alert(item: $deleting) { note in
@@ -50,8 +52,9 @@ struct BoardView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(nsImage: PaperArt.mark).resizable().frame(width: 34, height: 34)
-                Text("Paperpin").font(.custom("Georgia-Bold", size: 22))
-            }.padding(.leading, 17).padding(.top, navigation.desktopMode ? 24 : 48)
+                Text("Paperpin").font(appearance.effectiveGlass
+                    ? .system(size: 21, weight: .semibold, design: .rounded) : .custom("Georgia-Bold", size: 22))
+            }.padding(.leading, 17).padding(.top, 48)
             Eyebrow(text: "Library").padding(.leading, 22).padding(.top, 39).padding(.bottom, 10)
             navRow(.board, title: "Sticky board", symbol: "square.grid.2x2", count: store.board.notes.count)
             navRow(.archive, title: "Archive", symbol: "archivebox", count: store.board.archive.count)
@@ -68,27 +71,21 @@ struct BoardView: View {
             }.buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Ink.secondary)
                 .padding(.horizontal, 18).frame(height: 30)
                 .help("Show pending tasks and add a task from the menu bar")
-            if navigation.desktopMode {
-                Label("On desktop", systemImage: "desktopcomputer")
-                    .font(.system(size: 12)).foregroundStyle(Ink.secondary)
-                    .padding(.horizontal, 18).frame(height: 30)
-            } else {
-                Toggle(isOn: $navigation.floats) {
-                    HStack(spacing: 7) {
-                        Image(systemName: "macwindow.on.rectangle").frame(width: 17)
-                        Text("Keep on top")
-                    }
-                }.toggleStyle(.switch).controlSize(.mini).font(.system(size: 12)).foregroundStyle(Ink.secondary)
-                    .padding(.horizontal, 18).frame(height: 30)
-                    .help("Keep the board above other windows")
-            }
+            Toggle(isOn: $navigation.floats) {
+                HStack(spacing: 7) {
+                    Image(systemName: "macwindow.on.rectangle").frame(width: 17)
+                    Text("Keep on top")
+                }
+            }.toggleStyle(.switch).controlSize(.mini).font(.system(size: 12)).foregroundStyle(Ink.secondary)
+                .padding(.horizontal, 18).frame(height: 30)
+                .help("Keep the board above other windows")
             Rectangle().fill(Ink.line).frame(height: 1).padding(.horizontal, 18).padding(.top, 13)
             HStack(spacing: 7) {
                 Circle().fill(store.diskIssue == nil ? Ink.greenDot : Ink.warning).frame(width: 6, height: 6)
-                Text(store.diskIssue == nil ? "Saved on this Mac" : "Save needs attention")
+                Text(store.diskIssue == nil ? store.saveState.statusText : "Save needs attention")
                     .font(.system(size: 11))
             }.foregroundStyle(Ink.secondary).padding(.horizontal, 21).padding(.vertical, 17)
-        }.frame(maxHeight: .infinity).background(Ink.sidebar)
+        }.frame(maxHeight: .infinity).background(Ink.sidebar.opacity(appearance.effectiveGlass ? 0.70 : 1))
     }
 
     private func navRow(_ section: Section, title: String, symbol: String, count: Int) -> some View {
@@ -103,8 +100,10 @@ struct BoardView: View {
                 Spacer(minLength: 0)
                 CountBadge(count: count).fixedSize()
             }
+            .foregroundStyle(appearance.effectiveGlass && navigation.section == section ? GlassStyle.accent : Ink.text)
             .padding(.horizontal, 10).frame(height: 35)
-            .background(RoundedRectangle(cornerRadius: 7).fill(navigation.section == section ? Ink.selected : .clear))
+            .background(RoundedRectangle(cornerRadius: appearance.effectiveGlass ? 10 : 7, style: .continuous)
+                .fill(navigation.section == section ? Ink.selected : .clear))
             .contentShape(Rectangle())
         }.buttonStyle(.plain).padding(.horizontal, 10).padding(.bottom, 3)
             .accessibilityLabel(title)
@@ -114,7 +113,8 @@ struct BoardView: View {
         VStack(alignment: .leading, spacing: 13) {
             Eyebrow(text: Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
             HStack(spacing: 12) {
-                Text(isBoard ? "Sticky board" : "Archive").font(.custom("Georgia", size: 40))
+                Text(isBoard ? "Sticky board" : "Archive").font(appearance.effectiveGlass
+                    ? .system(size: 36, weight: .semibold, design: .rounded) : .custom("Georgia", size: 40))
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
                 Menu {
@@ -153,10 +153,11 @@ struct BoardView: View {
                         Text("⌘F").font(.system(size: 10))
                     }
                 }.foregroundStyle(Ink.faint).padding(.horizontal, 9).frame(maxWidth: 171).frame(height: 28)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Ink.surface))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(focus == .search ? Ink.accent : Ink.line, lineWidth: 1))
+                    .background(RoundedRectangle(cornerRadius: appearance.effectiveGlass ? 9 : 6, style: .continuous).fill(Ink.surface))
+                    .overlay(RoundedRectangle(cornerRadius: appearance.effectiveGlass ? 9 : 6, style: .continuous)
+                        .stroke(focus == .search ? Ink.accent : Ink.line, lineWidth: 1))
             }
-        }.padding(.horizontal, 30).padding(.top, navigation.desktopMode ? 21 : 45).padding(.bottom, 20)
+        }.padding(.horizontal, 30).padding(.top, 45).padding(.bottom, 20)
     }
 
     private var content: some View {
@@ -181,13 +182,9 @@ struct BoardView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear { honorFocusRequest(navigation.focusRequest, proxy: proxy) }
             .onChange(of: navigation.focusRequest) { request in
-                guard let request else { return }
-                // Wait for the new grid contents and any previously offscreen card.
-                DispatchQueue.main.async {
-                    if let id = request.noteID { proxy.scrollTo(id, anchor: .top) }
-                    DispatchQueue.main.async { focus = request.field }
-                }
+                honorFocusRequest(request, proxy: proxy)
             }
         }
         .overlay(alignment: .bottom) {
@@ -202,6 +199,20 @@ struct BoardView: View {
                 }.padding(.horizontal, 14).padding(.vertical, 10).background(Capsule().fill(Ink.accent))
                     .foregroundStyle(Ink.onAccent).shadow(color: .black.opacity(0.1), radius: 4, y: 2)
                     .padding(.bottom, 16)
+            }
+        }
+    }
+
+    private func honorFocusRequest(_ request: FocusRequest?, proxy: ScrollViewProxy) {
+        guard let request else { return }
+        // A newly created hosting view may receive its request before its first body.
+        // Wait for layout and the target card, while ignoring superseded requests.
+        DispatchQueue.main.async {
+            guard navigation.focusRequest == request else { return }
+            if let id = request.noteID { proxy.scrollTo(id, anchor: .top) }
+            DispatchQueue.main.async {
+                guard navigation.focusRequest == request else { return }
+                focus = request.field
             }
         }
     }
@@ -224,11 +235,21 @@ struct BoardView: View {
 
 struct BoardLayoutOptions: View {
     @ObservedObject var navigation: Navigation
+    @ObservedObject private var appearance = AppearanceSettings.shared
+    @ObservedObject private var loginItem = LoginItemController.shared
 
     var body: some View {
-        Toggle("Desktop mode", isOn: $navigation.desktopMode)
+        Toggle("Minimal mode", isOn: $navigation.minimalMode)
         Button(navigation.sidebarHidden ? "Show sidebar" : "Hide sidebar") {
             navigation.sidebarHidden.toggle()
+        }
+        Divider()
+        Toggle("Liquid Glass", isOn: $appearance.glassEnabled)
+        if let status = appearance.glassStatus { Text(status) }
+        Toggle("Launch at login", isOn: Binding(get: { loginItem.isEnabled }, set: loginItem.setEnabled))
+        if let message = loginItem.message {
+            Text(message)
+            Button("Open Login Items Settings…", action: loginItem.openSettings)
         }
     }
 }
@@ -237,11 +258,13 @@ struct EmptyViewMessage: View {
     let symbol: String
     let title: String
     let detail: String
+    @ObservedObject private var appearance = AppearanceSettings.shared
     var body: some View {
         VStack(spacing: 13) {
             Image(systemName: symbol).font(.system(size: 24, weight: .light)).foregroundStyle(Ink.accent)
                 .frame(width: 54, height: 54).background(Circle().fill(Ink.selected))
-            Text(title).font(.custom("Georgia", size: 24)).foregroundStyle(Ink.text)
+            Text(title).font(appearance.effectiveGlass
+                ? .system(size: 23, weight: .medium, design: .rounded) : .custom("Georgia", size: 24)).foregroundStyle(Ink.text)
             Text(detail).font(.system(size: 13)).foregroundStyle(Ink.secondary)
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
         }.padding(.horizontal, 32).padding(.vertical, 60).frame(maxWidth: .infinity)
@@ -253,6 +276,7 @@ struct ArchiveView: View {
     let filtering: Bool
     @ObservedObject var store: BoardStore
     @ObservedObject var navigation: Navigation
+    @ObservedObject private var appearance = AppearanceSettings.shared
 
     var body: some View {
         if entries.isEmpty {
@@ -273,7 +297,8 @@ struct ArchiveView: View {
                                 Text(entry.task.displayText).font(.system(size: 14, weight: .medium))
                                     .fixedSize(horizontal: false, vertical: true)
                                 HStack(spacing: 5) {
-                                    Circle().fill((source?.color ?? entry.color).marker).frame(width: 6, height: 6)
+                                    Circle().fill(appearance.effectiveGlass ? (source?.color ?? entry.color).glassAccent : (source?.color ?? entry.color).marker)
+                                        .frame(width: 6, height: 6)
                                     Text(source?.displayTitle ?? entry.noteTitle).lineLimit(1)
                                     Text("·")
                                     Text(entry.completedAt.formatted(date: .omitted, time: .shortened))
@@ -288,8 +313,13 @@ struct ArchiveView: View {
                             }.buttonStyle(.plain).foregroundStyle(Ink.accent)
                                 .help("Return this task to its sticky")
                         }.padding(.horizontal, 15).padding(.vertical, 13)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Ink.surface))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Ink.line, lineWidth: 1))
+                            .background {
+                                if appearance.effectiveGlass { GlassCardBackground(cornerRadius: 12) }
+                                else { RoundedRectangle(cornerRadius: 8).fill(Ink.surface) }
+                            }
+                            .overlay {
+                                if !appearance.effectiveGlass { RoundedRectangle(cornerRadius: 8).stroke(Ink.line, lineWidth: 1) }
+                            }
                     }
                 }
             }.padding(.horizontal, 30).padding(.top, 14).padding(.bottom, 56)

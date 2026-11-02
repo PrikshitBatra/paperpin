@@ -3,6 +3,7 @@ import SwiftUI
 struct QuickPanel: View {
     @ObservedObject var store: BoardStore
     @ObservedObject var navigation: Navigation
+    @ObservedObject private var appearance = AppearanceSettings.shared
     let openBoard: (UUID?) -> Void
     let openArchive: () -> Void
     let close: () -> Void
@@ -13,7 +14,8 @@ struct QuickPanel: View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(nsImage: PaperArt.mark).resizable().frame(width: 26, height: 26)
-                Text("Paperpin").font(.custom("Georgia-Bold", size: 17))
+                Text("Paperpin").font(appearance.effectiveGlass
+                    ? .system(size: 17, weight: .semibold, design: .rounded) : .custom("Georgia-Bold", size: 17))
                 Spacer()
                 Menu {
                     BoardLayoutOptions(navigation: navigation)
@@ -30,7 +32,8 @@ struct QuickPanel: View {
                     .accessibilityLabel("Open archive").help("Open archive")
             }.padding(.horizontal, 17).padding(.top, 12)
             HStack(spacing: 8) {
-                Text("Pending tasks").font(.custom("Georgia", size: 26))
+                Text("Pending tasks").font(appearance.effectiveGlass
+                    ? .system(size: 25, weight: .semibold, design: .rounded) : .custom("Georgia", size: 26))
                 CountBadge(count: store.pendingCount)
                 Spacer()
             }.padding(.horizontal, 19).padding(.top, 14).padding(.bottom, 12)
@@ -39,7 +42,8 @@ struct QuickPanel: View {
                 VStack(spacing: 9) {
                     Image(systemName: "checkmark.circle").font(.system(size: 25, weight: .light))
                         .foregroundStyle(Ink.greenDot)
-                    Text("All caught up").font(.custom("Georgia", size: 20))
+                    Text("All caught up").font(appearance.effectiveGlass
+                        ? .system(size: 20, weight: .medium, design: .rounded) : .custom("Georgia", size: 20))
                     Text("Add your next task below.").font(.system(size: 12)).foregroundStyle(Ink.secondary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -48,7 +52,7 @@ struct QuickPanel: View {
                         ForEach(notesWithTasks) { note in
                             Button { openBoard(note.id) } label: {
                                 HStack(spacing: 6) {
-                                    Circle().fill(note.color.marker).frame(width: 7, height: 7)
+                                    Circle().fill(appearance.effectiveGlass ? note.color.glassAccent : note.color.marker).frame(width: 7, height: 7)
                                     Text(note.displayTitle).lineLimit(1).font(.system(size: 11, weight: .semibold))
                                     Image(systemName: "arrow.up.right").font(.system(size: 8))
                                 }
@@ -84,7 +88,8 @@ struct QuickPanel: View {
                         }
                     } label: {
                         HStack(spacing: 4) {
-                            Circle().fill((store.captureNote?.color ?? .butter).marker).frame(width: 6, height: 6)
+                            Circle().fill(appearance.effectiveGlass ? (store.captureNote?.color ?? .butter).glassAccent : (store.captureNote?.color ?? .butter).marker)
+                                .frame(width: 6, height: 6)
                             Text(store.captureNote?.displayTitle ?? "Inbox").lineLimit(1)
                         }
                     }.menuStyle(.borderlessButton).fixedSize().frame(maxWidth: 193, alignment: .leading)
@@ -99,12 +104,13 @@ struct QuickPanel: View {
                     Button(action: add) {
                         Image(systemName: "return").font(.system(size: 11, weight: .semibold))
                             .frame(width: 27, height: 24).foregroundStyle(Ink.onAccent)
-                            .background(RoundedRectangle(cornerRadius: 5).fill(Ink.accent))
+                            .background(RoundedRectangle(cornerRadius: 5).fill(appearance.effectiveGlass ? GlassStyle.actionFill : Ink.accent))
                     }.buttonStyle(.plain).disabled(store.board.quickDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .accessibilityLabel("Add quick task").help("Add task (Return)")
                 }.padding(.leading, 10).padding(.trailing, 4).frame(height: 34)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(Ink.surface))
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(entering ? Ink.accent : Ink.line, lineWidth: 1))
+                    .background(RoundedRectangle(cornerRadius: appearance.effectiveGlass ? 10 : 7, style: .continuous).fill(Ink.surface))
+                    .overlay(RoundedRectangle(cornerRadius: appearance.effectiveGlass ? 10 : 7, style: .continuous)
+                        .stroke(entering ? Ink.accent : Ink.line, lineWidth: 1))
             }.padding(.horizontal, 17).padding(.vertical, 12)
             HStack {
                 Button { openBoard(nil) } label: {
@@ -121,9 +127,10 @@ struct QuickPanel: View {
                     Text("⌃⌥Space").font(.system(size: 10)).foregroundStyle(Ink.faint)
                         .help("Toggle this panel from any app")
                 }
-            }.padding(.horizontal, 18).frame(height: 36).background(Ink.sidebar)
+            }.padding(.horizontal, 18).frame(height: 36).background(Ink.sidebar.opacity(appearance.effectiveGlass ? 0.65 : 1))
         }
-        .frame(width: 348, height: 412).foregroundStyle(Ink.text).background(Ink.canvas)
+        .frame(width: 348, height: 412).foregroundStyle(Ink.text)
+        .paperSurface(color: Ink.canvas, cornerRadius: appearance.effectiveGlass ? GlassStyle.windowCornerRadius : 10)
         .onExitCommand(perform: close)
         .onAppear { DispatchQueue.main.async { entering = true } }
     }
