@@ -2,36 +2,71 @@ import AppKit
 import SwiftUI
 import Combine
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate, NSMenuItemValidation {
     let store = BoardStore()
     let navigation = Navigation()
     private(set) var window: NSWindow!
     private(set) var statusItem: NSStatusItem!
     private(set) var popover = NSPopover()
+    private(set) var minimalWindows: MinimalWindowCoordinator!
     private var subscriptions: Set<AnyCancellable> = []
     private var hotKey: HotKey?
-    private var boardIsOnDesktop = false
+    private var workspaceObservers: [NSObjectProtocol] = []
     private var transitioningFullScreen = false
-    private var ordinaryCollectionBehavior: NSWindow.CollectionBehavior = []
-    private let desktopLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+    private var pendingMinimalMode: Bool?
+    private var pendingDesktopNoteID: UUID?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        #if !PAPERPIN_QA
+        if CommandLine.arguments.contains("--setup-desktop"), !UserDefaults.standard.bool(forKey: "InitialDesktopSetup") {
+            navigation.minimalMode = true
+            UserDefaults.standard.set(true, forKey: "InitialDesktopSetup")
+        }
+        #endif
         buildMenu()
         makeWindow()
+        minimalWindows = MinimalWindowCoordinator(store: store, navigation: navigation,
+                                                  openBoard: { [weak self] in self?.showBoard() })
         makeStatusItem()
+        navigation.$minimalMode.dropFirst().removeDuplicates().sink { [weak self] enabled in
+            self?.applyMinimalMode(enabled)
+        }.store(in: &subscriptions)
+        navigation.desktopNoteRequests.sink { [weak self] id in
+            guard let self else { return }
+            self.navigation.minimalMode = true
+            if self.minimalWindows.enabled { self.minimalWindows.showNote(id, activate: true) }
+            else { self.pendingDesktopNoteID = id }
+        }.store(in: &subscriptions)
+        AppearanceSettings.shared.objectWillChange.sink { [weak self] in
+            DispatchQueue.main.async { self?.updateWindowAppearance() }
+        }.store(in: &subscriptions)
+        updateWindowAppearance()
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(workspace.addObserver(forName: NSWorkspace.willSleepNotification,
+                                                         object: nil, queue: .main) { [weak self] _ in
+            self?.flushEditors()
+        })
         hotKey = HotKey { [weak self] in self?.toggleQuick() }
         applyHotKeyPreference()
-        if !boardIsOnDesktop { showWindow() }
+        if navigation.minimalMode { applyMinimalMode(true) }
+        else { showWindow() }
+        if store.requiresFileRecovery { showWindow() }
+        #if !PAPERPIN_QA
+        if CommandLine.arguments.contains("--enable-login-item") {
+            LoginItemController.shared.setEnabled(true)
+            print("Launch at login: \(LoginItemController.shared.isEnabled ? "enabled" : "not enabled"). \(LoginItemController.shared.message ?? "")")
+            fflush(stdout)
+        }
+        #endif
         #if PAPERPIN_QA
         runWindowChecksIfRequested(self)
         #endif
     }
 
     private func makeWindow() {
-        let content = BoardView(store: store, navigation: navigation, openQuick: { [weak self] in self?.toggleQuick() })
         let available = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1200, height: 800)
-        window = BoardWindow(contentRect: NSRect(x: 0, y: 0, width: min(992, available.width - 30),
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: min(992, available.width - 30),
                                               height: min(710, available.height - 30)),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
@@ -42,21 +77,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         window.isReleasedWhenClosed = false
         window.backgroundColor = .windowBackgroundColor
         window.delegate = self
-        window.contentView = NSHostingView(rootView: content)
+        window.contentView = nil
         window.setAccessibilityLabel("Paperpin")
         if !window.setFrameUsingName("PaperpinBoard") { window.center() }
         window.setFrameAutosaveName("PaperpinBoard")
-        ordinaryCollectionBehavior = window.collectionBehavior
         navigation.$sidebarHidden.removeDuplicates().sink { [weak self] hidden in
             self?.updateMinimumSize(sidebarHidden: hidden)
         }.store(in: &subscriptions)
         navigation.$floats.removeDuplicates().sink { [weak self] on in
-            guard let self, !self.boardIsOnDesktop else { return }
-            self.window.level = on ? .floating : .normal
+            self?.window.level = on ? .floating : .normal
         }.store(in: &subscriptions)
-        navigation.$desktopMode.removeDuplicates().sink { [weak self] on in
-            self?.applyDesktopMode(on)
-        }.store(in: &subscriptions)
+    }
+
+    private func ensureBoardContent() {
+        guard !(window.contentView is NSHostingView<BoardView>) else { return }
+        window.contentView = NSHostingView(rootView: BoardView(store: store, navigation: navigation,
+                                                             openQuick: { [weak self] in self?.toggleQuick() }))
+    }
+
+    private func updateWindowAppearance() {
+        let glass = AppearanceSettings.shared.effectiveGlass
+        window.isOpaque = !glass
+        window.backgroundColor = glass ? .clear : .windowBackgroundColor
+    }
+
+    private func applyMinimalMode(_ enabled: Bool) {
+        if transitioningFullScreen || window.styleMask.contains(.fullScreen) {
+            pendingMinimalMode = enabled
+            if !transitioningFullScreen { window.toggleFullScreen(nil) }
+            return
+        }
+        popover.performClose(nil)
+        flushEditors()
+        if enabled {
+            window.orderOut(nil)
+            window.contentView = nil
+            minimalWindows.setEnabled(true)
+            if let id = pendingDesktopNoteID {
+                pendingDesktopNoteID = nil
+                minimalWindows.showNote(id, activate: true)
+            }
+        } else {
+            pendingDesktopNoteID = nil
+            minimalWindows.setEnabled(false)
+            showWindow()
+        }
+    }
+
+    private func flushEditors() {
+        store.flushPendingSave()
+        minimalWindows?.flushAndPersist()
     }
 
     private func updateMinimumSize(sidebarHidden: Bool) {
@@ -71,47 +141,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         window.setFrame(window.constrainFrameRect(frame, to: window.screen), display: true)
     }
 
-    private func applyDesktopMode(_ on: Bool) {
-        guard !transitioningFullScreen else { return }
-        if window.styleMask.contains(.fullScreen) {
-            if on { window.toggleFullScreen(nil) }
-            return
+    func windowWillClose(_ notification: Notification) {
+        flushEditors()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.window.isVisible else { return }
+            self.window.contentView = nil
         }
-        guard on != boardIsOnDesktop else { return }
-        boardIsOnDesktop = on
-        if on && window.isMiniaturized { window.deminiaturize(nil) }
-        let dismissControls: NSWindow.StyleMask = [.closable, .miniaturizable]
-        if on { window.styleMask.subtract(dismissControls) }
-        else { window.styleMask.formUnion(dismissControls) }
-        // Keep the transparent title bar for dragging and the resize edges for placement.
-        window.collectionBehavior = on
-            ? [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone, .fullScreenDisallowsTiling]
-            : ordinaryCollectionBehavior
-        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            window.standardWindowButton(button)?.isHidden = on
-        }
-        window.canHide = !on
-        window.isExcludedFromWindowsMenu = on
-        window.level = on ? desktopLevel : (navigation.floats ? .floating : .normal)
-        if on { window.orderFrontRegardless() }
     }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool { !boardIsOnDesktop }
 
     func windowWillEnterFullScreen(_ notification: Notification) { transitioningFullScreen = true }
     func windowWillExitFullScreen(_ notification: Notification) { transitioningFullScreen = true }
     func windowDidEnterFullScreen(_ notification: Notification) {
         transitioningFullScreen = false
-        applyDesktopMode(navigation.desktopMode)
+        if let enabled = pendingMinimalMode { applyMinimalMode(enabled); return }
     }
     func windowDidExitFullScreen(_ notification: Notification) {
         transitioningFullScreen = false
-        applyDesktopMode(navigation.desktopMode)
+        if let enabled = pendingMinimalMode {
+            pendingMinimalMode = nil
+            applyMinimalMode(enabled)
+        }
     }
 
     func applicationDidResignActive(_ notification: Notification) {
-        if boardIsOnDesktop { window.level = desktopLevel }
+        minimalWindows?.parkOnDesktop()
+        flushEditors()
     }
+
+    func applicationDidBecomeActive(_ notification: Notification) { LoginItemController.shared.refresh() }
 
     private func makeStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -133,6 +190,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }.store(in: &subscriptions)
         popover.behavior = .transient
         popover.animates = false
+        popover.delegate = self
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        store.flushPendingSave()
+        popover.contentViewController = nil
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -144,6 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        flushEditors()
         if store.diskIssue != nil {
             store.retrySave()
             if store.diskIssue != nil {
@@ -152,19 +216,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 alert.informativeText = store.diskIssue ?? ""
                 alert.addButton(withTitle: "Keep open")
                 alert.addButton(withTitle: "Quit")
-                return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+                if alert.runModal() != .alertSecondButtonReturn { return .terminateCancel }
             }
         }
+        minimalWindows?.prepareForTermination()
         return .terminateNow
     }
 
-    func applicationWillTerminate(_ notification: Notification) { hotKey?.unregister() }
+    func applicationWillTerminate(_ notification: Notification) {
+        minimalWindows?.prepareForTermination()
+        flushEditors()
+        hotKey?.unregister()
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+    }
 
     func showWindow() {
         popover.performClose(nil)
+        ensureBoardContent()
         if window.isMiniaturized { window.deminiaturize(nil) }
-        // An explicit Open Board request can reach the notes even when other windows cover them.
-        if boardIsOnDesktop { window.level = .normal }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
@@ -189,6 +258,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     @objc private func newNote() {
+        if navigation.minimalMode && !window.isKeyWindow {
+            navigation.showOnDesktop(store.addNote())
+            return
+        }
         showWindow()
         navigation.reveal(store.addNote(), editingTitle: true)
     }
@@ -197,7 +270,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showArchive() { navigation.go(.archive); showWindow() }
     @objc private func findNotes() { showWindow(); navigation.focusRequest = FocusRequest(.search) }
     @objc private func floatBoard() { navigation.floats.toggle() }
-    @objc private func toggleDesktopMode() { navigation.desktopMode.toggle() }
+    @objc private func toggleMinimalMode() { navigation.minimalMode.toggle() }
+    @objc private func toggleGlass() { AppearanceSettings.shared.glassEnabled.toggle() }
+    @objc private func toggleLaunchAtLogin() {
+        LoginItemController.shared.setEnabled(!LoginItemController.shared.isEnabled)
+        if let message = LoginItemController.shared.message {
+            let alert = NSAlert()
+            alert.messageText = "Launch at login"
+            alert.informativeText = message
+            alert.addButton(withTitle: "OK")
+            if LoginItemController.shared.needsApproval { alert.addButton(withTitle: "Open Settings") }
+            if alert.runModal() == .alertSecondButtonReturn { LoginItemController.shared.openSettings() }
+        }
+    }
+    @objc private func openLoginSettings() { LoginItemController.shared.openSettings() }
     @objc private func toggleSidebar() { navigation.sidebarHidden.toggle() }
     @objc private func toggleNextTask() { navigation.showsNextTask.toggle() }
     @objc private func toggleShortcut() {
@@ -216,11 +302,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(floatBoard) {
-            menuItem.state = navigation.floats && !navigation.desktopMode ? .on : .off
-            return !navigation.desktopMode
-        }
-        if menuItem.action == #selector(toggleDesktopMode) { menuItem.state = navigation.desktopMode ? .on : .off }
+        if menuItem.action == #selector(toggleMinimalMode) { menuItem.state = navigation.minimalMode ? .on : .off }
+        if menuItem.action == #selector(toggleGlass) { menuItem.state = AppearanceSettings.shared.glassEnabled ? .on : .off }
+        if menuItem.action == #selector(toggleLaunchAtLogin) { menuItem.state = LoginItemController.shared.isEnabled ? .on : .off }
+        if menuItem.action == #selector(floatBoard) { menuItem.state = navigation.floats ? .on : .off }
         if menuItem.action == #selector(toggleSidebar) { menuItem.title = navigation.sidebarHidden ? "Show Sidebar" : "Hide Sidebar" }
         if menuItem.action == #selector(toggleNextTask) { menuItem.state = navigation.showsNextTask ? .on : .off }
         if menuItem.action == #selector(toggleShortcut) {
@@ -247,6 +332,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         let appMenu = submenu("Paperpin")
         item(appMenu, "About Paperpin", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), target: NSApp)
+        item(appMenu, "Launch at Login", #selector(toggleLaunchAtLogin), target: self)
+        item(appMenu, "Login Items Settings…", #selector(openLoginSettings), target: self)
         appMenu.addItem(.separator())
         item(appMenu, "Hide Paperpin", #selector(NSApplication.hide(_:)), "h", target: NSApp)
         item(appMenu, "Quit Paperpin", #selector(NSApplication.terminate(_:)), "q", target: NSApp)
@@ -268,7 +355,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         item(view, "Archive", #selector(showArchive), "2", target: self)
         item(view, "Quick Panel", #selector(toggleQuick), target: self)
         view.addItem(.separator())
-        item(view, "Desktop Mode", #selector(toggleDesktopMode), target: self)
+        item(view, "Minimal Mode", #selector(toggleMinimalMode), target: self)
+        item(view, "Liquid Glass", #selector(toggleGlass), target: self)
         item(view, "Hide Sidebar", #selector(toggleSidebar), "s", modifiers: [.command, .control], target: self)
         item(view, "Keep Board on Top", #selector(floatBoard), target: self)
         view.addItem(.separator())
@@ -279,12 +367,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         item(windows, "Zoom", #selector(NSWindow.performZoom(_:)))
         NSApp.windowsMenu = windows
         NSApp.mainMenu = bar
-    }
-}
-
-private final class BoardWindow: NSWindow {
-    override func miniaturize(_ sender: Any?) {
-        if styleMask.contains(.miniaturizable) { super.miniaturize(sender) }
     }
 }
 

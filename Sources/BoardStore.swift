@@ -57,13 +57,89 @@ struct Board: Codable, Equatable {
     var pendingCount: Int { notes.reduce(0) { $0 + $1.tasks.count } }
 }
 
+enum BoardSaveState: Equatable {
+    case saved, pending, saving, failed
+
+    var statusText: String {
+        switch self {
+        case .saved: return "Saved on this Mac"
+        case .pending: return "Unsaved changes"
+        case .saving: return "Saving…"
+        case .failed: return "Save needs attention"
+        }
+    }
+}
+
+// This queue owns all encoding and file work. It never waits for the main queue,
+// so a lifecycle flush can safely drain it before the app sleeps or terminates.
+private final class BoardWriter {
+    struct Result {
+        let attempt: UInt64
+        let revision: UInt64
+        let error: String?
+    }
+
+    private let queue = DispatchQueue(label: "Paperpin.board-writer", qos: .utility)
+    private let file: URL
+    private let writeData: (Data, URL) throws -> Void
+    private var directoryReady = false
+    private var latestResult: Result?
+
+    init(file: URL, writeData: @escaping (Data, URL) throws -> Void) {
+        self.file = file
+        self.writeData = writeData
+    }
+
+    func submit(_ snapshot: Board, revision: UInt64, attempt: UInt64,
+                completion: @escaping (Result) -> Void) {
+        queue.async { [self] in
+            let error: String?
+            do {
+                let data = try JSONEncoder().encode(snapshot)
+                try prepareDirectory()
+                do {
+                    try writeData(data, file)
+                } catch let issue as CocoaError where issue.code == .fileNoSuchFile || issue.code == .fileReadNoSuchFile {
+                    // The user may have moved the Application Support directory.
+                    directoryReady = false
+                    try prepareDirectory()
+                    try writeData(data, file)
+                }
+                error = nil
+            } catch let issue {
+                error = issue.localizedDescription
+            }
+            let result = Result(attempt: attempt, revision: revision, error: error)
+            latestResult = result
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+
+    private func prepareDirectory() throws {
+        if !directoryReady {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            directoryReady = true
+        }
+    }
+
+    func drain() -> Result? { queue.sync { latestResult } }
+}
+
 final class BoardStore: ObservableObject {
     @Published private(set) var board: Board
     @Published private(set) var diskIssue: String?
+    @Published private(set) var saveState: BoardSaveState = .saved
 
     let file: URL
     private var fileNeedsRecovery = false
-    private let encoder = JSONEncoder()
+    private let writer: BoardWriter
+    private var revision: UInt64 = 0
+    private var savedRevision: UInt64 = 0
+    private var submittedRevision: UInt64?
+    private var attempt: UInt64 = 0
+    private var handledAttempt: UInt64 = 0
+    private var debounceSave: DispatchWorkItem?
+    private var maximumDelaySave: DispatchWorkItem?
 
     static var standardFile: URL {
         #if PAPERPIN_QA
@@ -77,8 +153,12 @@ final class BoardStore: ObservableObject {
         #endif
     }
 
-    init(file: URL = BoardStore.standardFile) {
+    init(file: URL = BoardStore.standardFile,
+         writeData: @escaping (Data, URL) throws -> Void = { data, file in
+             try data.write(to: file, options: [.atomic])
+         }) {
         self.file = file
+        writer = BoardWriter(file: file, writeData: writeData)
         board = Board()
         do {
             let data = try Data(contentsOf: file)
@@ -88,12 +168,22 @@ final class BoardStore: ObservableObject {
             }
             board = decoded
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-            save()
+            revision = 1
+            flushPendingSave()
         } catch {
             fileNeedsRecovery = true
             diskIssue = "Paperpin couldn’t read the saved board. Your original file is preserved. Reopen Paperpin after recovering the file in Finder."
+            saveState = .failed
         }
     }
+
+    deinit {
+        debounceSave?.cancel()
+        maximumDelaySave?.cancel()
+    }
+
+    var statusText: String { saveState.statusText }
+    var requiresFileRecovery: Bool { fileNeedsRecovery }
 
     var sortedNotes: [Sticky] { board.sortedNotes }
     var pendingCount: Int { board.pendingCount }
@@ -104,27 +194,81 @@ final class BoardStore: ObservableObject {
 
     func note(_ id: UUID) -> Sticky? { board.notes.first { $0.id == id } }
 
-    private func save() {
-        guard !fileNeedsRecovery else { return }
-        do {
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try encoder.encode(board)
-            try data.write(to: file, options: [.atomic])
-            if diskIssue != nil { diskIssue = nil }
-        } catch {
-            diskIssue = "Your latest edits are in memory. Paperpin couldn’t save them to this Mac. \(error.localizedDescription)"
+    private func setSaveState(_ value: BoardSaveState) {
+        if saveState != value { saveState = value }
+    }
+
+    private func scheduleSave() {
+        setSaveState(diskIssue == nil ? .pending : .failed)
+        debounceSave?.cancel()
+        let debounce = DispatchWorkItem { [weak self] in self?.submitSnapshot() }
+        debounceSave = debounce
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(350), execute: debounce)
+        if maximumDelaySave == nil {
+            let maximum = DispatchWorkItem { [weak self] in self?.submitSnapshot() }
+            maximumDelaySave = maximum
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2), execute: maximum)
         }
     }
 
-    func retrySave() { save() }
+    private func cancelScheduledSave() {
+        debounceSave?.cancel()
+        maximumDelaySave?.cancel()
+        debounceSave = nil
+        maximumDelaySave = nil
+    }
 
-    private func change(_ action: (inout Board) -> Void) {
+    private func submitSnapshot(force: Bool = false) {
+        guard !fileNeedsRecovery else { return }
+        cancelScheduledSave()
+        guard force || (revision > savedRevision && submittedRevision != revision) else { return }
+        submittedRevision = revision
+        attempt += 1
+        setSaveState(.saving)
+        writer.submit(board, revision: revision, attempt: attempt) { [weak self] in self?.didSave($0) }
+    }
+
+    private func didSave(_ result: BoardWriter.Result) {
+        // A synchronous flush may have already acknowledged this completion or a
+        // later retry. Older main-queue callbacks must not overwrite that state.
+        guard result.attempt > handledAttempt else { return }
+        handledAttempt = result.attempt
+        if let error = result.error {
+            diskIssue = "Your latest edits are in memory. Paperpin couldn’t save them to this Mac. \(error)"
+            setSaveState(.failed)
+        } else {
+            savedRevision = max(savedRevision, result.revision)
+            if diskIssue != nil { diskIssue = nil }
+            if savedRevision == revision { setSaveState(.saved) }
+            else { setSaveState(submittedRevision == revision ? .saving : .pending) }
+        }
+    }
+
+    /// Call on the main thread before quit, sleep, or discarding an editor.
+    /// This waits only for disk work, never for a main-queue completion callback.
+    @discardableResult
+    func flushPendingSave() -> Bool {
+        guard !fileNeedsRecovery else { return false }
+        submitSnapshot(force: saveState == .failed)
+        if let result = writer.drain() { didSave(result) }
+        return savedRevision == revision && diskIssue == nil
+    }
+
+    func retrySave() {
+        guard !fileNeedsRecovery else { return }
+        submitSnapshot(force: true)
+        if let result = writer.drain() { didSave(result) }
+    }
+
+    private func change(immediate: Bool = true, _ action: (inout Board) -> Void) {
         guard !fileNeedsRecovery else { return }
         var updated = board
         action(&updated)
         guard updated != board else { return }
+        revision += 1
         board = updated
-        save()
+        if immediate { submitSnapshot() }
+        else { scheduleSave() }
     }
 
     @discardableResult
@@ -139,9 +283,14 @@ final class BoardStore: ObservableObject {
     }
 
     func editNote(_ id: UUID, _ action: (inout Sticky) -> Void) {
-        change { board in
+        guard !fileNeedsRecovery, let previous = note(id) else { return }
+        var updated = previous
+        action(&updated)
+        let structural = previous.color != updated.color || previous.pinned != updated.pinned
+            || previous.tasks.map(\.id) != updated.tasks.map(\.id)
+        change(immediate: structural) { board in
             guard let index = board.notes.firstIndex(where: { $0.id == id }) else { return }
-            action(&board.notes[index])
+            board.notes[index] = updated
         }
     }
 
@@ -161,7 +310,7 @@ final class BoardStore: ObservableObject {
         }
     }
 
-    func setQuickDraft(_ value: String) { change { $0.quickDraft = value } }
+    func setQuickDraft(_ value: String) { change(immediate: false) { $0.quickDraft = value } }
     func setDestination(_ id: UUID) { change { $0.destination = id } }
 
     func addQuickTask() {

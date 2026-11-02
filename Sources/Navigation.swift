@@ -25,11 +25,12 @@ final class Navigation: ObservableObject {
     @Published var query = ""
     @Published var focusRequest: FocusRequest?
     @Published var feedback: Feedback?
+    let desktopNoteRequests = PassthroughSubject<UUID, Never>()
+    @Published var minimalMode: Bool {
+        didSet { UserDefaults.standard.set(minimalMode, forKey: "MinimalMode") }
+    }
     @Published var floats: Bool {
         didSet { UserDefaults.standard.set(floats, forKey: "FloatBoard") }
-    }
-    @Published var desktopMode: Bool {
-        didSet { UserDefaults.standard.set(desktopMode, forKey: "DesktopMode") }
     }
     @Published var sidebarHidden: Bool {
         didSet { UserDefaults.standard.set(sidebarHidden, forKey: "SidebarHidden") }
@@ -40,11 +41,15 @@ final class Navigation: ObservableObject {
     }
 
     init() {
+        minimalMode = UserDefaults.standard.bool(forKey: "MinimalMode")
         floats = UserDefaults.standard.bool(forKey: "FloatBoard")
-        desktopMode = UserDefaults.standard.bool(forKey: "DesktopMode")
         sidebarHidden = UserDefaults.standard.bool(forKey: "SidebarHidden")
         showsNextTask = UserDefaults.standard.bool(forKey: "ShowNextTask")
+        // Minimal Mode now owns the desktop experience; retire the old board setting.
+        UserDefaults.standard.removeObject(forKey: "DesktopMode")
     }
+
+    func showOnDesktop(_ id: UUID) { desktopNoteRequests.send(id) }
 
     func go(_ section: Section) {
         if self.section != section { query = ""; feedback = nil }

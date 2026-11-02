@@ -30,6 +30,7 @@ enum StoreChecks {
         store.editNote(other) { $0.title = "Renamed"; $0.draft = "unfinished checkbox" }
         store.setDestination(other)
         store.setQuickDraft("unfinished quick capture")
+        check(store.flushPendingSave(), "pending text edits flush before reopening")
         let reopened = BoardStore(file: file)
         check(reopened.board == store.board, "round-trip notes, unicode, colors, pinning, drafts, destination, and archive")
         reopened.restore(task.id)
@@ -49,6 +50,7 @@ enum StoreChecks {
         reopened.setQuickDraft("Fresh start")
         reopened.addQuickTask()
         check(reopened.board.notes.first?.title == "Inbox" && reopened.pendingCount == 1, "capture with no remaining stickies")
+        check(reopened.flushPendingSave(), "structural changes finish before inspecting disk")
         let earlier = try Data(contentsOf: file)
         var invalid = try JSONSerialization.jsonObject(with: earlier) as! [String: Any]
         invalid["version"] = 2
@@ -62,13 +64,14 @@ enum StoreChecks {
         try Data("unreadable".utf8).write(to: file)
         let damaged = BoardStore(file: file)
         _ = damaged.addNote()
-        let untouched = try String(contentsOf: file)
+        let untouched = try String(contentsOf: file, encoding: .utf8)
         check(damaged.diskIssue != nil && untouched == "unreadable", "damaged document preserved")
         try earlier.write(to: file)
         let retry = BoardStore(file: file)
         try FileManager.default.removeItem(at: file)
         try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
         retry.setQuickDraft("kept in memory")
+        _ = retry.flushPendingSave()
         check(retry.diskIssue != nil && retry.board.quickDraft == "kept in memory", "write failure keeps current edits")
         try FileManager.default.removeItem(at: file)
         retry.retrySave()
