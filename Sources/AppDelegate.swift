@@ -271,7 +271,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     @objc private func findNotes() { showWindow(); navigation.focusRequest = FocusRequest(.search) }
     @objc private func floatBoard() { navigation.floats.toggle() }
     @objc private func toggleMinimalMode() { navigation.minimalMode.toggle() }
-    @objc private func toggleGlass() { AppearanceSettings.shared.glassEnabled.toggle() }
+    @objc private func toggleGlass() {
+        let appearance = AppearanceSettings.shared
+        appearance.setGlassEnabled(!appearance.glassEnabled)
+    }
     @objc private func toggleLaunchAtLogin() {
         LoginItemController.shared.setEnabled(!LoginItemController.shared.isEnabled)
         if let message = LoginItemController.shared.message {
@@ -303,7 +306,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleMinimalMode) { menuItem.state = navigation.minimalMode ? .on : .off }
-        if menuItem.action == #selector(toggleGlass) { menuItem.state = AppearanceSettings.shared.glassEnabled ? .on : .off }
+        if menuItem.action == #selector(toggleGlass) {
+            let appearance = AppearanceSettings.shared
+            menuItem.state = appearance.nativeGlassAvailable && appearance.glassEnabled ? .on : .off
+            menuItem.toolTip = appearance.glassStatus
+            return appearance.nativeGlassAvailable
+        }
         if menuItem.action == #selector(toggleLaunchAtLogin) { menuItem.state = LoginItemController.shared.isEnabled ? .on : .off }
         if menuItem.action == #selector(floatBoard) { menuItem.state = navigation.floats ? .on : .off }
         if menuItem.action == #selector(toggleSidebar) { menuItem.title = navigation.sidebarHidden ? "Show Sidebar" : "Hide Sidebar" }
