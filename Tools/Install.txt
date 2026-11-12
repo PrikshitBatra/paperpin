@@ -1,0 +1,37 @@
+PAPERPIN — INSTALL ON YOUR MAC
+For Intel and Apple silicon Macs running macOS 13 or later.
+
+1. Drag Paperpin onto the Applications folder in this window.
+   If you are updating, quit Paperpin first and choose Replace.
+2. Eject the Paperpin disk image.
+3. Open Paperpin from Applications.
+
+FIRST OPEN — FREE BUILD
+This app is locally signed and has not been notarized by Apple.
+macOS may ask you to approve it once:
+
+  Open System Settings > Privacy & Security.
+  Scroll to Security and click Open Anyway beside Paperpin.
+  Confirm Open, then open Paperpin normally in the future.
+
+Only approve the copy you intended to download from the project's release.
+Apple's instructions: https://support.apple.com/en-us/102445
+
+SHARING WITH ANOTHER MAC
+Send the release download LINK, not the DMG as a chat attachment.
+On the receiving Mac, open that link in Safari and download the DMG there.
+Some chat apps add a restrictive transfer flag to attachments. This can
+cause “The application Paperpin can't be opened” with no Open Anyway button.
+
+If this happens, eject the disk image, remove only the blocked app from
+Applications, and download a fresh DMG through Safari using the release link.
+Repeat the installation steps above. Keep your Paperpin data folder.
+On managed Macs, your administrator may need to allow the app.
+
+YOUR NOTES
+Updates keep your existing notes on this Mac. The installer contains no
+personal notes and does not transfer notes from another Mac.
+
+Liquid Glass is available only on macOS 26+ with native support. Older Macs
+use the opaque paper appearance and show a disabled Liquid Glass option.
+Choose Paperpin > Launch at Login if you want it to start automatically.

@@ -1,4 +1,19 @@
-# Validation — Paperpin 1.3.3
+# Validation — Paperpin 1.3.4
+
+Packaging update validated on 12 November 2026 on Apple silicon, macOS 27.0.1. This build uses Xcode 27.2 / Swift 6.4.2, targets macOS 13+, and retains both Intel and Apple silicon executables. App features and the note-storage format are unchanged.
+
+- All 43 storage, persistence, appearance, and login-policy checks passed with the selected toolchain.
+- Release compilation passed with linker warnings treated as errors. Selecting the complete Xcode toolchain removes the prior Command Line Tools warning about an Intel compatibility archive. The system-wide developer selection was not changed.
+- `package.zsh` built a fresh app, verified both architecture signatures, created and verified an HFS+ compressed DMG, mounted it read-only, copied out the app, and rechecked its signature, architectures, minimum OS setting, and executable bytes. The packaged app contains no quarantine attribute or personal notes.
+- The Applications shortcut and first-open instructions are included. A separate check confirmed that packaging refuses to overwrite an existing installer. Shell syntax and Git whitespace checks passed.
+- Artifact: `Paperpin-1.3.4-universal.dmg`, 2,721,226 bytes. SHA-256: `d558d4e5dc445846c2f8130ce31f8187a0f7aa4a677e7d5b6f49dcd46051a40a`.
+- The installer is ad hoc signed, **not Apple-notarized**. This machine has no Developer ID signing identity, and the user chose the free distribution route. Recipients may need the normal Privacy & Security → Open Anyway approval. Share a browser download link rather than a chat attachment; a DMG cannot prevent a transfer app from adding restrictive metadata later.
+- The user confirmed that 1.3.3 opens on an Intel Mac running macOS 15.7 after removing the transfer quarantine flag. This establishes the reported launch block's cause, not a full Intel feature test. A receiving-Mac download and first-open check of 1.3.4 remains necessary.
+- A supplementary Intel QA run under Rosetta on the development Mac opened, edited, and saved notes, but its quick-panel-open assertion failed. It is not counted as a passing UI suite. The full UI suites, energy benchmarks, and older-OS runtime checks were not rerun for this packaging-only update.
+
+Local evidence: `.build/package-1.3.4.log`, `.build/package-1.3.4-checks.log`, and `.build/distribution/`. A copy of the DMG and checksum is in Downloads. The installed app, personal notes, and login registration were not changed by this packaging work.
+
+## Previous app validation — 1.3.3
 
 Validated on 3 November 2026 on Apple silicon, macOS 27.0.1, using Swift 6.4 and the installed Command Line Tools. Branch: `codex/minimal-desktop-energy-glass`.
 

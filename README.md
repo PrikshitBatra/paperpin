@@ -30,7 +30,7 @@ There is no repeating autosave or animation loop. The full board is created only
 
 ## Build and run
 
-Use a Mac with Swift and a macOS 26+ SDK. The build script creates a universal app for Apple silicon and Intel Macs running macOS 13 or later. It probes SwiftUI compiler support and can fall back to an installed macOS 26 SDK if a newer Command Line Tools SDK lacks the required macro plugin. Set `PAPERPIN_SDKROOT` to select a specific working SDK.
+Use a Mac with Swift and a macOS 26+ SDK. The build script creates a universal app for Apple silicon and Intel Macs running macOS 13 or later. It prefers `/Applications/Xcode.app` when installed, without changing the system-wide developer selection; set `DEVELOPER_DIR` to override this choice. It probes SwiftUI compiler support and can fall back to an installed macOS 26 SDK if a newer Command Line Tools SDK lacks the required macro plugin. Set `PAPERPIN_SDKROOT` to select a specific working SDK. Linker warnings fail the release build, including warnings about missing Intel compatibility libraries.
 
 ```sh
 ./build.zsh
@@ -40,6 +40,16 @@ open .build/Paperpin.app
 You can copy the built app into Applications. Your board remains at `~/Library/Application Support/Paperpin/Board.json`, using the original version-1 format. Desktop window geometry and appearance preferences live separately in UserDefaults.
 
 For a first local installation, launch the installed app with `--setup-desktop --enable-login-item` to select minimal mode and request login registration. The setup flag applies once and never overrides a later mode choice. Login registration reports its actual result; macOS may require user approval.
+
+## Installers and sharing
+
+Run `./package.zsh` to build a fresh universal app and a drag-to-Applications DMG under `.build/distribution/`. An optional output directory is accepted as its first argument. The script refuses to overwrite an existing installer, verifies both architecture signatures, mounts the image, checks a copied app, and produces a SHA-256 checksum. It packages only the build output and installation instructions. Personal notes, preferences, and login registration are not included or changed.
+
+The free build is **ad hoc signed, not Apple-notarized**. Recipients may need to open **System Settings → Privacy & Security → Open Anyway** once after attempting to open Paperpin. Apple Developer ID signing and notarization require Apple Developer Program membership; repackaging alone cannot replace them. See [Apple's first-open instructions](https://support.apple.com/en-us/102445).
+
+Share a **browser download link**, including when sending it through WhatsApp or Telegram. Recipients should open the link in Safari and download there, rather than receive the DMG as a chat attachment. Some transfer apps can apply a restrictive quarantine flag that prevents both launch and the normal Open Anyway option, even to notarized apps; Apple describes this [transfer-related block](https://developer.apple.com/forums/thread/767612). The release link and Safari route avoid relying on the chat app to create the installer file. Affected recipients should replace the blocked app with a fresh browser download and use the normal macOS approval screen. Do not delete their Paperpin data folder.
+
+The installer includes the same graphical steps in **Read me first.txt**. A free DMG cannot promise approval-free first launch or override restrictions on managed Macs.
 
 ## Tests
 
