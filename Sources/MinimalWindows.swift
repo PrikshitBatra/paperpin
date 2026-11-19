@@ -98,7 +98,7 @@ final class MinimalWindowCoordinator: NSObject, NSWindowDelegate {
             sticky.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle,
                                          .fullScreenNone, .fullScreenDisallowsTiling]
             sticky.delegate = self
-            let hosting = NSHostingView(rootView: MinimalStickyView(
+            let hosting = TaskReorderHostingView(rootView: MinimalStickyView(
                 model: model,
                 close: { [weak sticky] in sticky?.performClose(nil) },
                 openBoard: { [weak self] in
@@ -477,14 +477,16 @@ private struct MinimalStickyView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: NoteContentStyle.rowSpacing) {
                     ForEach(note.tasks) { task in
-                        ChecklistRow(label: task.displayText, complete: {
-                            model.store.finish(task.id, on: note.id)
-                        }) {
-                            TextField("", text: Binding(get: {
-                                model.note.tasks.first { $0.id == task.id }?.text ?? ""
-                            }, set: { model.store.editTask(task.id, on: note.id, text: $0) }),
-                                      prompt: Text("Untitled task"), axis: .vertical)
-                                .accessibilityLabel("Task text")
+                        TaskReorderRow(task: task, noteID: note.id, store: model.store) {
+                            ChecklistRow(label: task.displayText, complete: {
+                                model.store.finish(task.id, on: note.id)
+                            }) {
+                                TextField("", text: Binding(get: {
+                                    model.note.tasks.first { $0.id == task.id }?.text ?? ""
+                                }, set: { model.store.editTask(task.id, on: note.id, text: $0) }),
+                                          prompt: Text("Untitled task"), axis: .vertical)
+                                    .accessibilityLabel("Task text")
+                            }
                         }
                     }
                     TaskDraftRow(draft: note.draft, commit: commitDraft) {

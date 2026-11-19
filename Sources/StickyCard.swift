@@ -85,16 +85,18 @@ struct StickyCard: View {
             Rectangle().fill(Ink.text.opacity(0.13)).frame(height: 1).padding(.top, 15).padding(.bottom, 8)
             VStack(alignment: .leading, spacing: NoteContentStyle.rowSpacing) {
                 ForEach(note.tasks) { task in
-                    ChecklistRow(label: task.displayText, complete: {
-                        store.finish(task.id, on: note.id)
-                        navigation.notify("Task archived", undoTask: task.id)
-                    }) {
-                        TextField("", text: Binding(get: {
-                            store.note(note.id)?.tasks.first { $0.id == task.id }?.text ?? ""
-                        }, set: { store.editTask(task.id, on: note.id, text: $0) }),
-                                  prompt: Text("Untitled task"), axis: .vertical)
-                            .focused(focus, equals: .task(task.id))
-                            .accessibilityLabel("Task text")
+                    TaskReorderRow(task: task, noteID: note.id, store: store) {
+                        ChecklistRow(label: task.displayText, complete: {
+                            store.finish(task.id, on: note.id)
+                            navigation.notify("Task archived", undoTask: task.id)
+                        }) {
+                            TextField("", text: Binding(get: {
+                                store.note(note.id)?.tasks.first { $0.id == task.id }?.text ?? ""
+                            }, set: { store.editTask(task.id, on: note.id, text: $0) }),
+                                      prompt: Text("Untitled task"), axis: .vertical)
+                                .focused(focus, equals: .task(task.id))
+                                .accessibilityLabel("Task text")
+                        }
                     }
                 }
 

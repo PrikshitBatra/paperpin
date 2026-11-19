@@ -1,4 +1,38 @@
-# Validation — Paperpin 1.3.4
+# Validation — Paperpin 1.3.5
+
+Validated on 19 November 2026 on Apple silicon, macOS 27.0.1, with Xcode 27.2 / Swift 6.4.2. The universal app targets macOS 13+ and includes arm64 and x86_64 binaries.
+
+Task rows now share a native drag handle across the board, desktop notes, and quick panel. Drops resolve task IDs against the current note and commit only when the position changes. The version-1 board format is unchanged. Native row bounds constrain drop targets, including on systems where a non-clipping view's visible rectangle extends across its parent list.
+
+| Suite | Passing checks |
+| --- | ---: |
+| Storage, persistence, appearance, login policy, and task ordering | 67 |
+| Board, quick panel, keyboard, and relaunch | 29 |
+| Layout and preference migration | 25 |
+| Desktop windows and restoration | 33 |
+| Content sizing, checklist alignment, appearance, and relaunch | 25 |
+| Unavailable native glass and relaunch | 21 |
+| Native reorder callbacks, shared windows, scrolling, and relaunch | 55 |
+
+All **255 checks passed**. The reorder suite covers every source task and final position in all three views, including wrapped text; beginning/end drops; stale, external, cross-note, and outside-list rejection; insertion-line cancellation; long-list scrolling in both directions; quick-panel retention during a drag and dismissal restoration; accessible move actions; closing/deleting the source; and saved order after relaunch. Storage checks verify one write per changed move, no writes for unchanged/invalid moves, latest unsaved text preservation, duplicate titles, archive position restoration, failed-save recovery, and legacy format loading.
+
+The user tested real mouse dragging after the row-boundary correction and confirmed that moving tasks up and down works correctly in both the board and desktop note. Quick-panel destinations and drag lifecycle were exercised through native callbacks with actual window geometry. Pointer automation was unreliable and is not counted as a successful end-to-end quick-panel mouse test.
+
+Opaque and glass screenshots were reviewed in light and dark appearances. Sample-note review images: [board with reorder grip](docs/images/task-reorder-board-glass.png) and [desktop with reorder grip](docs/images/task-reorder-desktop-glass.png). These screenshots contain synthetic notes only. Existing wrapped-checkbox alignment checks also passed.
+
+The universal release compiled with linker warnings treated as errors and passed strict signature verification for both architectures. The DMG was verified, mounted read-only, copied out, and checked again for executable integrity, architectures, signature, and minimum OS. It includes an Applications shortcut and first-open instructions. The build remains **ad hoc signed, not Apple-notarized**; share the browser download link and use macOS's normal first-open approval if required.
+
+Paperpin 1.3.5 was installed from this DMG at `/Applications/Paperpin.app`, launched successfully, and restored the existing desktop note with the new task handles. Note-file bytes and saved presentation preferences were unchanged after installation and launch. The existing enabled launch-at-login registration was restored and verified in the macOS background-item registry. A local backup of the previous app, notes, and preferences is in `.build/pre-reorder-update-1.3.5/`.
+
+No repeating idle timer or autosave was added. The active drag alone receives native periodic destination updates for scrolling; its temporary subscriptions and insertion marker are cleared when it ends. Save checks verified no recurring writes after reordering settled. The historical five-minute energy comparison was not repeated for this feature; no new battery-life or compositor-energy claim is made.
+
+Runtime checks used this Apple silicon Mac. Intel binaries were built and verified, but this version has not been run on a physical Intel Mac or an older macOS release. Logout/login was not performed.
+
+Local evidence: `.build/reorder-checks.log`, `.build/reorder-ui-final.log`, `.build/reorder-regression/`, `.build/reorder-build.log`, `.build/package-1.3.5.log`, and `.build/tests/ui-run.Gk171C/`.
+
+Artifact: `Paperpin-1.3.5-universal.dmg`, 2,082,459 bytes. SHA-256: `15ed7250114ddd7ccc689651bf59d4ae82f8f18fc674a501b92c1b975f110407`.
+
+## Previous packaging validation — Paperpin 1.3.4
 
 Packaging update validated on 12 November 2026 on Apple silicon, macOS 27.0.1. This build uses Xcode 27.2 / Swift 6.4.2, targets macOS 13+, and retains both Intel and Apple silicon executables. App features and the note-storage format are unchanged.
 

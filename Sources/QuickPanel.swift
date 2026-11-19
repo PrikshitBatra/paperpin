@@ -59,14 +59,16 @@ struct QuickPanel: View {
                             }.buttonStyle(.plain).foregroundStyle(Ink.secondary)
                                 .help("Open \(note.displayTitle) on the board").padding(.top, 12).padding(.bottom, 5)
                             ForEach(note.tasks) { task in
-                                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                                    TaskCheck(label: task.displayText) {
-                                        store.finish(task.id, on: note.id)
-                                        navigation.notify("Task archived", undoTask: task.id)
-                                    }.alignmentGuide(.firstTextBaseline) { d in d[VerticalAlignment.center] + 4.5 }
-                                    Text(task.displayText).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-                                    Spacer(minLength: 0)
-                                }.padding(.vertical, 1)
+                                TaskReorderRow(task: task, noteID: note.id, store: store) {
+                                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                                        TaskCheck(label: task.displayText) {
+                                            store.finish(task.id, on: note.id)
+                                            navigation.notify("Task archived", undoTask: task.id)
+                                        }.alignmentGuide(.firstTextBaseline) { d in d[VerticalAlignment.center] + 4.5 }
+                                        Text(task.displayText).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                                        Spacer(minLength: 0)
+                                    }.padding(.vertical, 1)
+                                }
                             }
                         }
                     }.padding(.horizontal, 18).padding(.bottom, 12)

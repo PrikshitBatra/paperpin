@@ -301,6 +301,25 @@ final class BoardStore: ObservableObject {
         }
     }
 
+    /// Move an existing task before another task in the same note; nil appends.
+    /// Resolve IDs against the current board so a drag cannot overwrite newer edits.
+    @discardableResult
+    func moveTask(_ id: UUID, on noteID: UUID, before destination: UUID?) -> Bool {
+        guard !fileNeedsRecovery, let note = note(noteID),
+              let source = note.tasks.firstIndex(where: { $0.id == id }), destination != id,
+              destination == nil || note.tasks.contains(where: { $0.id == destination }) else { return false }
+        var tasks = note.tasks
+        let task = tasks.remove(at: source)
+        let index = destination.flatMap { target in tasks.firstIndex { $0.id == target } } ?? tasks.count
+        tasks.insert(task, at: index)
+        guard tasks != note.tasks else { return false }
+        change { board in
+            guard let index = board.notes.firstIndex(where: { $0.id == noteID }) else { return }
+            board.notes[index].tasks = tasks
+        }
+        return true
+    }
+
     func addDraft(on noteID: UUID) {
         editNote(noteID) { note in
             let text = note.draft.trimmingCharacters(in: .whitespacesAndNewlines)

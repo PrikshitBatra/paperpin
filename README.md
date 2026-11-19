@@ -4,6 +4,12 @@ Paperpin is a native sticky-note board for macOS. Keep multiple notes in view, m
 
 The menu bar shows the pending count and can also show the next task’s title. Click the icon or press **Control–Option–Space** to add or complete tasks without opening the board. Notes and unfinished drafts save automatically on your Mac.
 
+## Reorder tasks
+
+Hover over a task and drag the small grip at its right edge. A line shows where it will land; release to move it within that note. This works on the board, in desktop notes, and in the quick panel, with the same order immediately reflected everywhere. Hold near the top or bottom of a long list to scroll while dragging. Press Escape or drop outside the list to cancel.
+
+For precise moves, right-click the grip and choose **Move Up** or **Move Down**. A focused grip also supports the arrow keys, Return for its menu, and VoiceOver move actions. Reordering preserves task text, unfinished drafts, and completion/archive behavior. Tasks stay within their original note; archived tasks and the task-entry field cannot be dragged.
+
 ## Minimal desktop notes
 
 Choose **View → Minimal Mode** for separate, resizable Stickies-style windows. Use a sticky’s **Show on desktop** action to add it. Notes stay behind normal windows across desktop Spaces; click a note to edit it. Switching applications returns it to the desktop.
@@ -67,10 +73,13 @@ PAPERPIN_CHECK_LAYOUT=1 ./Tests/run-ui.zsh
 PAPERPIN_CHECK_MINIMAL=1 ./Tests/run-ui.zsh
 PAPERPIN_CHECK_POLISH=1 ./Tests/run-ui.zsh
 PAPERPIN_CHECK_GLASS_UNAVAILABLE=1 ./Tests/run-ui.zsh
+PAPERPIN_CHECK_REORDER=1 ./Tests/run-ui.zsh
 ```
 
 The layout suite checks normal board controls, floating, sidebar, minimize/reopen behavior, preference restoration, and migration away from the retired whole-board desktop setting. The minimal-mode suite checks native editing, shared notes, window restoration, fullscreen transitions, simulated display removal, and lifecycle saves. Screenshots and logs are written under `.build/tests/`.
 
 The glass-unavailable suite simulates absent native support in the isolated QA app, checking disabled controls, opaque rendering, and preserved notes/preferences across relaunch. The simulation override is excluded from release builds.
+
+The reorder suite exercises native drop callbacks with actual row geometry across all three views, every task position, invalid drops, cancellation, scrolling, accessibility actions, shared edits, and relaunch. These controller checks complement a real pointer-drag check; they do not synthesize a WindowServer drag. Run `PAPERPIN_REORDER_INTERACTIVE=1 ./Tests/run-ui.zsh` to open isolated sample notes for that manual check.
 
 `Tools/TypingBenchmark.swift` compares atomic save counts against the historical store (compile the historical version with `-D PAPERPIN_BASELINE`). `Tools/measure-idle.py PID --output result.json` measures five minutes of process CPU, wakeups, memory, and disk counters after a 30-second warmup. These process counters do not isolate WindowServer/GPU energy or predict battery life.

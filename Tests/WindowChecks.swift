@@ -290,6 +290,11 @@ private func checkGlassUnavailable(_ delegate: AppDelegate, directory: URL, chec
 func runWindowChecksIfRequested(_ delegate: AppDelegate) {
     guard let directory = ProcessInfo.processInfo.environment["PAPERPIN_TEST_DIRECTORY"] else { return }
     let url = URL(fileURLWithPath: directory, isDirectory: true)
+    if ProcessInfo.processInfo.environment["PAPERPIN_REORDER_INTERACTIVE"] == "1" {
+        _ = prepareReorderPreview(delegate)
+        print("READY reorder preview"); fflush(stdout)
+        return
+    }
     if let mode = ProcessInfo.processInfo.environment["PAPERPIN_ENERGY_MODE"] {
         let id = delegate.store.board.notes[0].id
         delegate.store.editNote(id) { $0.body = "Desktop note\nA quiet place for today's tasks." }
@@ -316,6 +321,12 @@ func runWindowChecksIfRequested(_ delegate: AppDelegate) {
         func check(_ ok: Bool, _ name: String) {
             print("\(ok ? "PASS" : "FAIL") \(name)"); fflush(stdout)
             if !ok { failures += 1 }
+        }
+        if ProcessInfo.processInfo.environment["PAPERPIN_CHECK_REORDER"] == "1" {
+            await checkReordering(delegate, directory: url, check: check)
+            print("FINISHED \(failures) reorder failures"); fflush(stdout)
+            NSApp.terminate(nil)
+            return
         }
         if ProcessInfo.processInfo.environment["PAPERPIN_CHECK_GLASS_UNAVAILABLE"] == "1" {
             await checkGlassUnavailable(delegate, directory: url, check: check)

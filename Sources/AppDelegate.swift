@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     private var transitioningFullScreen = false
     private var pendingMinimalMode: Bool?
     private var pendingDesktopNoteID: UUID?
+    private var retainingPopoverForDrag = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -91,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 
     private func ensureBoardContent() {
         guard !(window.contentView is NSHostingView<BoardView>) else { return }
-        window.contentView = NSHostingView(rootView: BoardView(store: store, navigation: navigation,
+        window.contentView = TaskReorderHostingView(rootView: BoardView(store: store, navigation: navigation,
                                                              openQuick: { [weak self] in self?.toggleQuick() }))
     }
 
@@ -191,9 +192,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         popover.behavior = .transient
         popover.animates = false
         popover.delegate = self
+        TaskReorderSession.shared.$active.sink { [weak self] drag in
+            guard let self else { return }
+            if let drag, self.popover.isShown,
+               self.popover.contentViewController?.view.window?.windowNumber == drag.windowNumber {
+                self.retainingPopoverForDrag = true
+                self.popover.behavior = .applicationDefined
+            } else if drag == nil && self.retainingPopoverForDrag {
+                self.retainingPopoverForDrag = false
+                self.popover.behavior = .transient
+                if !NSApp.isActive { self.popover.performClose(nil) }
+            }
+        }.store(in: &subscriptions)
     }
 
     func popoverDidClose(_ notification: Notification) {
+        if let window = popover.contentViewController?.view.window { TaskReorderSession.shared.end(window: window) }
         store.flushPendingSave()
         popover.contentViewController = nil
     }
@@ -246,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     @objc func toggleQuick() {
         if popover.isShown { popover.performClose(nil); return }
         guard let button = statusItem?.button, button.window != nil else { showBoard(); return }
-        popover.contentViewController = NSHostingController(rootView:
+        popover.contentViewController = TaskReorderHostingController(rootView:
             QuickPanel(store: store, navigation: navigation, openBoard: { [weak self] id in
                 guard let self else { return }
                 self.showBoard()
