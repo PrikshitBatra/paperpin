@@ -4,6 +4,20 @@ Paperpin is a native sticky-note board for macOS. Keep multiple notes in view, m
 
 The menu bar shows the pending count and can also show the next task’s title. Click the icon or press **Control–Option–Space** to add or complete tasks without opening the board. Notes and unfinished drafts save automatically on your Mac.
 
+## Apple Reminders
+
+Choose **Connect Apple Reminders…** in a note’s **•••** menu, allow macOS Reminders access, and choose a list. The picker shows list and account names and suggests **Main Work** when available. One note and one list can be connected at a time. The connection adds **Tasks** and **Apple Reminders Tasks** tabs to that note on the board and desktop; each presentation remembers its own selection. Narrow notes use a compact selector.
+
+Paperpin can **view and complete** pending reminders. It shows expandable notes, due dates, and recurring indicators. Creation, editing, deletion, recurrence settings, and completed history remain in Apple Reminders. Completing an Apple reminder does not add it to Paperpin’s archive. Local Paperpin tasks remain separate and keep their existing drag ordering.
+
+Every view uses the same order: overdue reminders (including recurring ones), dated non-recurring reminders, undated non-recurring reminders, then remaining recurring reminders. Dated groups show the earliest due date first. Date-only items become overdue after their due day ends in the applicable time zone. Ties are stable by creation date, title, and identifier.
+
+The quick panel has an **Apple Reminders · [list name]** section. Its pending count and the menu-bar count include both sources; the optional next-task title keeps local tasks first. Board search includes connected reminder titles and notes, opening the Reminders tab for reminder-only matches.
+
+Sync uses Apple’s [EventKit framework](https://developer.apple.com/documentation/eventkit) and the Mac’s local Reminders database. Apple handles iCloud delivery; a local save does not imply another device has received it yet. Refreshes follow app activation, wake, manual refresh, and [EventKit change notifications](https://developer.apple.com/documentation/eventkit/updating-with-notifications), with no polling. A one-shot timer updates overdue ordering at the next relevant deadline. Permission loss clears displayed reminders; missing lists, read-only lists, and failures have explicit states. Failed completion stays visible with a retry action.
+
+Use **Apple Reminders → Change List…** or **Disconnect** in the note menu. Renames preserve the connection by identifier; a removed/replaced list requires reselection. Disconnecting or deleting the host note never deletes Apple reminders. Connections and tab preferences live outside `Board.json`; reminders are not copied into the note file. Each Mac needs its own connection and macOS permission. macOS 13 uses the legacy permission flow; macOS 14+ uses full Reminders access.
+
 ## Reorder tasks
 
 Hover over a task and drag the small grip at its right edge. A line shows where it will land; release to move it within that note. This works on the board, in desktop notes, and in the quick panel, with the same order immediately reflected everywhere. Hold near the top or bottom of a long list to scroll while dragging. Press Escape or drop outside the list to cancel.
@@ -74,6 +88,7 @@ PAPERPIN_CHECK_MINIMAL=1 ./Tests/run-ui.zsh
 PAPERPIN_CHECK_POLISH=1 ./Tests/run-ui.zsh
 PAPERPIN_CHECK_GLASS_UNAVAILABLE=1 ./Tests/run-ui.zsh
 PAPERPIN_CHECK_REORDER=1 ./Tests/run-ui.zsh
+PAPERPIN_CHECK_REMINDERS=1 ./Tests/run-ui.zsh
 ```
 
 The layout suite checks normal board controls, floating, sidebar, minimize/reopen behavior, preference restoration, and migration away from the retired whole-board desktop setting. The minimal-mode suite checks native editing, shared notes, window restoration, fullscreen transitions, simulated display removal, and lifecycle saves. Screenshots and logs are written under `.build/tests/`.
@@ -81,5 +96,9 @@ The layout suite checks normal board controls, floating, sidebar, minimize/reope
 The glass-unavailable suite simulates absent native support in the isolated QA app, checking disabled controls, opaque rendering, and preserved notes/preferences across relaunch. The simulation override is excluded from release builds.
 
 The reorder suite exercises native drop callbacks with actual row geometry across all three views, every task position, invalid drops, cancellation, scrolling, accessibility actions, shared edits, and relaunch. These controller checks complement a real pointer-drag check; they do not synthesize a WindowServer drag. Run `PAPERPIN_REORDER_INTERACTIVE=1 ./Tests/run-ui.zsh` to open isolated sample notes for that manual check.
+
+The Reminders unit suite uses a fake client to exercise ordering, time zones, permission changes, stale fetches, recurrence identity, failed completion, independent tabs, and notification coalescing. The window suite uses synthetic reminders only; it never requests system permission or registers login items. `PAPERPIN_REMINDERS_INTERACTIVE=1 ./Tests/run-ui.zsh` opens sample reminders for real UI checks.
+
+`Tests/LiveRemindersChecks.swift` is a separate, explicitly launched test app for real EventKit validation. It requests its own permission, creates a clearly labeled temporary list, tests one-time/weekly/monthly reminders and external changes, and removes that list. It is never compiled into the distributed app. Do not use real personal reminders for completion tests.
 
 `Tools/TypingBenchmark.swift` compares atomic save counts against the historical store (compile the historical version with `-D PAPERPIN_BASELINE`). `Tools/measure-idle.py PID --output result.json` measures five minutes of process CPU, wakeups, memory, and disk counters after a 30-second warmup. These process counters do not isolate WindowServer/GPU energy or predict battery life.

@@ -3,6 +3,7 @@ import SwiftUI
 struct BoardView: View {
     @ObservedObject var store: BoardStore
     @ObservedObject var navigation: Navigation
+    @ObservedObject var reminders: RemindersStore
     @ObservedObject private var appearance = AppearanceSettings.shared
     let openQuick: () -> Void
     @FocusState private var focus: BoardField?
@@ -13,8 +14,11 @@ struct BoardView: View {
     private var matches: [Sticky] {
         guard !search.isEmpty else { return store.sortedNotes }
         return store.sortedNotes.filter { note in
-            ([note.displayTitle, note.body] + note.tasks.map(\.text)).contains { $0.localizedStandardContains(search) }
+            localMatch(note) || reminders.matches(search, noteID: note.id)
         }
+    }
+    private func localMatch(_ note: Sticky) -> Bool {
+        ([note.displayTitle, note.body] + note.tasks.map(\.text)).contains { $0.localizedStandardContains(search) }
     }
     private var archiveMatches: [FinishedTask] {
         guard !search.isEmpty else { return store.board.archive }
@@ -42,7 +46,7 @@ struct BoardView: View {
         .ignoresSafeArea()
         .alert(item: $deleting) { note in
             Alert(title: Text("Delete “\(note.displayTitle)”?"),
-                  message: Text("This removes the sticky and its pending tasks. Completed tasks stay in the archive."),
+                  message: Text("This removes the sticky and its pending tasks. Completed tasks stay in the archive. Any connected Apple reminders stay in Apple Reminders."),
                   primaryButton: .destructive(Text("Delete sticky")) { store.deleteNote(note.id) },
                   secondaryButton: .cancel())
         }
@@ -135,7 +139,7 @@ struct BoardView: View {
             }
             HStack(spacing: 10) {
                 Text(isBoard
-                     ? "\(plural(store.board.notes.count, "sticky", "stickies"))  ·  \(store.pendingCount) pending"
+                     ? "\(plural(store.board.notes.count, "sticky", "stickies"))  ·  \(store.pendingCount + reminders.state.items.count) pending"
                      : plural(store.board.archive.count, "completed task", "completed tasks"))
                     .font(.system(size: 13)).foregroundStyle(Ink.secondary).fixedSize()
                 Spacer(minLength: 0)
@@ -171,7 +175,8 @@ struct BoardView: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 246, maximum: 440), spacing: 18, alignment: .top)],
                                   alignment: .leading, spacing: 18) {
                             ForEach(matches) { note in
-                                StickyCard(note: note, store: store, navigation: navigation, focus: $focus,
+                                StickyCard(note: note, store: store, navigation: navigation, reminders: reminders,
+                                           reminderSearchMatch: !localMatch(note) && reminders.matches(search, noteID: note.id), focus: $focus,
                                            delete: { deleting = note }).id(note.id)
                             }
                             if search.isEmpty { NewStickyTile(action: newNote) }

@@ -1,4 +1,44 @@
-# Validation — Paperpin 1.3.5
+# Validation — Paperpin 1.4.0
+
+Validated on 23 November 2026 on Apple silicon, macOS 27.0.1, using Xcode 27.2 / Swift 6.4.2. Both release architectures target macOS 13+.
+
+The Reminders connection uses a serial EventKit adapter, immutable snapshots, and one shared store. It does not alter the version-1 board format. Only connection identifiers and independent tab preferences are persisted; reminders are not copied into `Board.json`. Completion re-fetches and validates the current occurrence, updates only completion state, and lets Apple generate the next recurring occurrence. Unrelated desktop note editors do not observe reminder item changes.
+
+| Suite | Passing checks |
+| --- | ---: |
+| Existing storage, persistence, appearance, login, and task-ordering checks | 67 |
+| Existing board, quick-panel, layout, desktop, polish, glass, and reorder window checks | 188 |
+| Reminders ordering, permissions, connection, completion, and refresh checks | 49 |
+| Reminders controller/window checks and relaunch | 21 |
+| Real EventKit temporary-list checks | 12 |
+
+All **337 checks passed**. The live and UI interaction checks below supplement the controller tests.
+
+The existing storage, archive, desktop, layout, appearance, and task-reordering suites passed unchanged. The shortcut check also exposed an activation edge case: opening the quick panel now activates Paperpin before requesting keyboard focus.
+
+Reminders checks cover overdue recurring tasks, stable ties, timed and date-only deadlines, floating/explicit time zones, DST, permission revocation and restoration, read-only lists, rename/removal/replacement, old-list and out-of-order replies, duplicate clicks, failures and retries, shared saving state, lifecycle completion draining, tab persistence, host-note deletion, search, burst coalescing, and settled inactivity. Unchanged connection preferences are compared by decoded value, avoiding JSON key-order-related writes.
+
+The controller/window suite covers independent tabs and recreation, search-driven tab selection, shared quick-panel data, combined counts, local-first next titles, minimum-size windows, paper/glass rendering, lazy quick-panel release, shared completion, unchanged local tasks/archive, and relaunch. Native UI interactions were separately checked through the app: tab selection, expandable notes, reminder-note search, desktop completion, the corresponding board removal, and the updated quick-panel total. SwiftUI virtual controls were not exposed to the in-process accessibility probe on this OS; its initial unsuccessful attempts are not counted as passing UI interaction tests.
+
+Real EventKit validation used a clearly labeled **Paperpin TEMPORARY sync test** list after the user granted access to the separate test app. One-time completion, concurrent note edits, restoration, and deletion passed. Weekly and monthly completions advanced to future occurrences while preserving notes and recurrence rules; stale completion attempts were rejected. The temporary list was removed. **No real Main Work reminder was completed or edited during testing.**
+
+Synthetic screenshots were reviewed in light and dark paper/glass modes, including a 200-point-wide desktop note. Review images: [glass desktop](docs/images/reminders-desktop-glass-light.png), [paper desktop](docs/images/reminders-desktop-paper-light.png), [glass board](docs/images/reminders-board-glass-dark.png), and [quick panel](docs/images/reminders-quick-panel.png). The existing unavailable-glass suite also passed. Reduce Transparency/Low Power Mode remain covered by the existing appearance-policy tests; system-wide accessibility and power settings were not changed during this update.
+
+A five-minute idle measurement of an optimized build with a synthetic connected desktop note, glass enabled, and the board closed recorded **0.0017% of one CPU core**, **49.2 MiB physical footprint**, **0 disk/logical write bytes**, **0 package-idle wakeups**, and **47 interrupt-wakeup counter increments**. `Board.json` was unchanged. Reminders diagnostics recorded no additional fetches or preference writes during the settled interval. The fixture isolates app-owned scheduling and rendering; it does not measure Apple's iCloud service overhead. These are process counters, not battery-life estimates, and exclude WindowServer/GPU attribution. No new typing-write comparison against an older release is claimed.
+
+The universal DMG passed image verification, read-only mount, application copy, executable comparison, arm64/x86_64 architecture checks, macOS 13 minimum-target checks, and strict signature verification for both slices. It contains only the fresh app, Applications shortcut, and installation instructions. It is **ad hoc signed, not Apple-notarized**; recipients should download through a browser and use normal macOS first-open approval when required.
+
+The DMG was installed at `/Applications/Paperpin.app` as **1.4.0 (10)**. The app reopened successfully, the user granted Reminders access and selected **Main Work**, and the existing **Tasks** note displayed the connection. A further orderly relaunch restored the same list and desktop tab. The personal `Board.json` bytes remained unchanged. Appearance, board/minimal mode, sidebar, next-task, and open-note settings were preserved; desktop sizes were identical and coordinates matched within one AppKit point. The existing launch-at-login registration remained **enabled, allowed, notified** in the system registry without toggling it. The previous app, notes, and preferences are backed up in `.build/pre-reminders-update-1.4.0/`.
+
+Artifact: `Paperpin-1.4.0-universal.dmg`, **2,439,317 bytes**. SHA-256: `efd9841637bcf28fdc2384342e76300bbb2f938e7fe93ac101da1865f75b11f7`. A copy is also in Downloads.
+
+Runtime testing used this Apple silicon Mac. Physical Intel and older macOS runtime checks were unavailable. A separate iCloud-device update, a forced offline network test, actual sleep/wake, and logout/login were not performed in this session; event-driven refresh paths and local database operations were verified without claiming remote-device delivery. No network connection was disabled and the user’s session was not interrupted for logout.
+
+Local evidence: `.build/reminders-all-checks-final.log`, `.build/reminders-unit-final.log`, `.build/reminders-ui-final.log`, `.build/reminders-regression/`, `.build/live-reminders-checks.log`, `.build/reminders-energy.json`, `.build/reminders-energy-app.log`, and `.build/package-1.4.0.log`.
+
+---
+
+## Previous validation — Paperpin 1.3.5
 
 Validated on 19 November 2026 on Apple silicon, macOS 27.0.1, with Xcode 27.2 / Swift 6.4.2. The universal app targets macOS 13+ and includes arm64 and x86_64 binaries.
 

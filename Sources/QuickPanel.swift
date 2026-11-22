@@ -3,6 +3,7 @@ import SwiftUI
 struct QuickPanel: View {
     @ObservedObject var store: BoardStore
     @ObservedObject var navigation: Navigation
+    @ObservedObject var reminders: RemindersStore
     @ObservedObject private var appearance = AppearanceSettings.shared
     let openBoard: (UUID?) -> Void
     let openArchive: () -> Void
@@ -34,11 +35,11 @@ struct QuickPanel: View {
             HStack(spacing: 8) {
                 Text("Pending tasks").font(appearance.effectiveGlass
                     ? .system(size: 25, weight: .semibold, design: .rounded) : .custom("Georgia", size: 26))
-                CountBadge(count: store.pendingCount)
+                CountBadge(count: store.pendingCount + reminders.state.items.count)
                 Spacer()
             }.padding(.horizontal, 19).padding(.top, 14).padding(.bottom, 12)
             Rectangle().fill(Ink.line).frame(height: 1)
-            if store.pendingCount == 0 {
+            if store.pendingCount == 0 && reminders.state.connection == nil {
                 VStack(spacing: 9) {
                     Image(systemName: "checkmark.circle").font(.system(size: 25, weight: .light))
                         .foregroundStyle(Ink.greenDot)
@@ -69,6 +70,12 @@ struct QuickPanel: View {
                                         Spacer(minLength: 0)
                                     }.padding(.vertical, 1)
                                 }
+                            }
+                        }
+                        if reminders.state.connection != nil {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Divider().padding(.top, 12)
+                                RemindersListView(reminders: reminders, compact: true)
                             }
                         }
                     }.padding(.horizontal, 18).padding(.bottom, 12)

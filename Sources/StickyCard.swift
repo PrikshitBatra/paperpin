@@ -10,6 +10,9 @@ struct StickyCard: View {
     let note: Sticky
     @ObservedObject var store: BoardStore
     @ObservedObject var navigation: Navigation
+    @ObservedObject var reminders: RemindersStore
+    var reminderSearchMatch = false
+    @State private var showingConnection = false
     @ObservedObject private var appearance = AppearanceSettings.shared
     @Environment(\.colorScheme) private var colorScheme
     let focus: FocusState<BoardField?>.Binding
@@ -49,6 +52,8 @@ struct StickyCard: View {
                         }
                     }
                     Divider()
+                    RemindersNoteMenu(reminders: reminders, noteID: note.id, showingConnection: $showingConnection)
+                    Divider()
                     Button("Delete sticky…", role: .destructive, action: delete)
                 } label: {
                     Image(systemName: "ellipsis").font(.system(size: 14, weight: .semibold))
@@ -68,6 +73,34 @@ struct StickyCard: View {
                 .focused(focus, equals: .title(note.id)).accessibilityLabel("Sticky title")
                 .onSubmit { focus.wrappedValue = .body(note.id) }
 
+            ConnectedNoteContent(reminders: reminders, noteID: note.id, presentation: "board",
+                                 reminderSearchMatch: reminderSearchMatch) {
+                localContent
+            }.padding(.top, reminders.connected(to: note.id) ? 12 : 0)
+        }
+        .padding(.horizontal, appearance.effectiveGlass ? 20 : 19)
+        .padding(.top, appearance.effectiveGlass ? 18 : 14).padding(.bottom, appearance.effectiveGlass ? 18 : 15)
+        .frame(maxWidth: .infinity, minHeight: 212, alignment: .topLeading)
+        .background {
+            if appearance.effectiveGlass {
+                GlassCardBackground()
+            } else {
+                ZStack(alignment: .bottomTrailing) {
+                    PaperShape().fill(note.color.paper)
+                    PaperShape().stroke(note.color.marker.opacity(0.3), lineWidth: 0.8)
+                    PaperFold().fill(note.color.fold).frame(width: 19, height: 19)
+                }
+                .shadow(color: .black.opacity(0.055), radius: 3, x: 0, y: 2)
+            }
+        }
+        .environment(\.colorScheme, appearance.effectiveGlass ? colorScheme : .light)
+        .sheet(isPresented: $showingConnection) {
+            RemindersConnectionSheet(reminders: reminders, noteID: note.id, noteTitle: note.displayTitle, presentation: "board")
+        }
+    }
+
+    private var localContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
             // Let the paper grow with the text. Longer notes scroll in their editor.
             Text(verbatim: note.body + "\u{200B}")
                 .font(.system(size: contentFontSize)).lineLimit(16).fixedSize(horizontal: false, vertical: true)
@@ -111,22 +144,6 @@ struct StickyCard: View {
                 .font(.system(size: 10, weight: .medium)).foregroundStyle(Ink.secondary)
                 .accessibilityLabel("\(note.tasks.count) pending tasks")
         }
-        .padding(.horizontal, appearance.effectiveGlass ? 20 : 19)
-        .padding(.top, appearance.effectiveGlass ? 18 : 14).padding(.bottom, appearance.effectiveGlass ? 18 : 15)
-        .frame(maxWidth: .infinity, minHeight: 212, alignment: .topLeading)
-        .background {
-            if appearance.effectiveGlass {
-                GlassCardBackground()
-            } else {
-                ZStack(alignment: .bottomTrailing) {
-                    PaperShape().fill(note.color.paper)
-                    PaperShape().stroke(note.color.marker.opacity(0.3), lineWidth: 0.8)
-                    PaperFold().fill(note.color.fold).frame(width: 19, height: 19)
-                }
-                .shadow(color: .black.opacity(0.055), radius: 3, x: 0, y: 2)
-            }
-        }
-        .environment(\.colorScheme, appearance.effectiveGlass ? colorScheme : .light)
     }
 
     private func commitDraft() {

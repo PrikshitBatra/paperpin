@@ -5,6 +5,12 @@ import Combine
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate, NSMenuItemValidation {
     let store = BoardStore()
     let navigation = Navigation()
+    #if PAPERPIN_QA
+    let remindersClient = FixtureRemindersClient()
+    lazy var reminders = RemindersStore(client: remindersClient)
+    #else
+    let reminders = RemindersStore(client: EventKitRemindersClient())
+    #endif
     private(set) var window: NSWindow!
     private(set) var statusItem: NSStatusItem!
     private(set) var popover = NSPopover()
@@ -25,9 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             UserDefaults.standard.set(true, forKey: "InitialDesktopSetup")
         }
         #endif
+        reminders.start(board: store)
         buildMenu()
         makeWindow()
-        minimalWindows = MinimalWindowCoordinator(store: store, navigation: navigation,
+        minimalWindows = MinimalWindowCoordinator(store: store, navigation: navigation, reminders: reminders,
                                                   openBoard: { [weak self] in self?.showBoard() })
         makeStatusItem()
         navigation.$minimalMode.dropFirst().removeDuplicates().sink { [weak self] enabled in
@@ -92,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 
     private func ensureBoardContent() {
         guard !(window.contentView is NSHostingView<BoardView>) else { return }
-        window.contentView = TaskReorderHostingView(rootView: BoardView(store: store, navigation: navigation,
+        window.contentView = TaskReorderHostingView(rootView: BoardView(store: store, navigation: navigation, reminders: reminders,
                                                              openQuick: { [weak self] in self?.toggleQuick() }))
     }
 
@@ -169,7 +176,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         flushEditors()
     }
 
-    func applicationDidBecomeActive(_ notification: Notification) { LoginItemController.shared.refresh() }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        LoginItemController.shared.refresh()
+        reminders.refresh()
+    }
 
     private func makeStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -179,10 +189,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         button.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         button.target = self
         button.action = #selector(statusClicked)
-        store.$board.combineLatest(navigation.$showsNextTask)
-            .map { board, showNext -> MenuBarText in
+        store.$board.combineLatest(navigation.$showsNextTask, reminders.$state)
+            .map { board, showNext, reminders -> MenuBarText in
                 let task = showNext ? board.sortedNotes.lazy.compactMap { $0.tasks.first }.first : nil
-                return MenuBarText(count: board.pendingCount, task: task?.displayText)
+                return MenuBarText(count: board.pendingCount + reminders.items.count,
+                                   task: showNext ? (task?.displayText ?? reminders.items.first?.displayTitle) : nil)
             }
             .removeDuplicates().sink { [weak button] display in
                 button?.title = display.title
@@ -234,6 +245,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             }
         }
         minimalWindows?.prepareForTermination()
+        if reminders.hasPendingCompletions {
+            reminders.afterCompletions { sender.reply(toApplicationShouldTerminate: true) }
+            return .terminateLater
+        }
         return .terminateNow
     }
 
@@ -261,12 +276,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         if popover.isShown { popover.performClose(nil); return }
         guard let button = statusItem?.button, button.window != nil else { showBoard(); return }
         popover.contentViewController = TaskReorderHostingController(rootView:
-            QuickPanel(store: store, navigation: navigation, openBoard: { [weak self] id in
+            QuickPanel(store: store, navigation: navigation, reminders: reminders, openBoard: { [weak self] id in
                 guard let self else { return }
                 self.showBoard()
                 if let id { self.navigation.reveal(id, editingTitle: false) }
             }, openArchive: { [weak self] in self?.showArchive() }, close: { [weak self] in self?.popover.performClose(nil) }))
         popover.contentSize = NSSize(width: 348, height: 412)
+        NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }

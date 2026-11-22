@@ -14,3 +14,9 @@ xcrun swiftc -sdk "$paperpin_sdk" -swift-version 5 -target "$(uname -m)-apple-ma
     "$project_dir/Sources/Theme.swift" "$project_dir/Sources/BoardStore.swift" "$project_dir/Sources/PaperArt.swift" \
     "$project_dir/Tests/AppearanceChecks.swift" -o "$check_dir/AppearanceChecks"
 "$check_dir/AppearanceChecks"
+
+xcrun swiftc -sdk "$paperpin_sdk" -swift-version 5 -target "$(uname -m)-apple-macos13.0" \
+    "$project_dir/Sources/BoardStore.swift" "$project_dir/Sources/RemindersModels.swift" \
+    "$project_dir/Sources/RemindersStore.swift" "$project_dir/Tests/RemindersFixture.swift" \
+    "$project_dir/Tests/RemindersChecks.swift" -o "$check_dir/RemindersChecks"
+"$check_dir/RemindersChecks"

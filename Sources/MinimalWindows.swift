@@ -9,6 +9,7 @@ final class MinimalWindowCoordinator: NSObject, NSWindowDelegate {
     private(set) var savedOpenNoteIDs: [UUID]
     private let store: BoardStore
     private let navigation: Navigation
+    private let reminders: RemindersStore
     private let openBoard: () -> Void
     private let defaults: UserDefaults
     private var frames: [String: String]
@@ -19,10 +20,11 @@ final class MinimalWindowCoordinator: NSObject, NSWindowDelegate {
     private var terminating = false
     private let desktopLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
 
-    init(store: BoardStore, navigation: Navigation, openBoard: @escaping () -> Void,
+    init(store: BoardStore, navigation: Navigation, reminders: RemindersStore, openBoard: @escaping () -> Void,
          defaults: UserDefaults = .standard) {
         self.store = store
         self.navigation = navigation
+        self.reminders = reminders
         self.openBoard = openBoard
         self.defaults = defaults
         savedOpenNoteIDs = (defaults.stringArray(forKey: "MinimalOpenNotes") ?? []).compactMap(UUID.init(uuidString:))
@@ -99,7 +101,7 @@ final class MinimalWindowCoordinator: NSObject, NSWindowDelegate {
                                          .fullScreenNone, .fullScreenDisallowsTiling]
             sticky.delegate = self
             let hosting = TaskReorderHostingView(rootView: MinimalStickyView(
-                model: model,
+                model: model, reminders: reminders,
                 close: { [weak sticky] in sticky?.performClose(nil) },
                 openBoard: { [weak self] in
                     self?.openBoard()
@@ -336,6 +338,9 @@ enum MinimalNoteLayout {
 
 private struct MinimalStickyView: View {
     @ObservedObject var model: MinimalNoteModel
+    let reminders: RemindersStore
+    @StateObject private var reminderHost: ReminderHostObservation
+    @State private var showingConnection = false
     @ObservedObject private var appearance = AppearanceSettings.shared
     let close: () -> Void
     let openBoard: () -> Void
@@ -353,11 +358,17 @@ private struct MinimalStickyView: View {
     private var cornerRadius: CGFloat { appearance.effectiveGlass ? GlassStyle.windowCornerRadius : 0 }
     private var contentFontSize: CGFloat { NoteContentStyle.fontSize(glass: appearance.effectiveGlass) }
 
+    init(model: MinimalNoteModel, reminders: RemindersStore, close: @escaping () -> Void, openBoard: @escaping () -> Void) {
+        self.model = model; self.reminders = reminders; self.close = close; self.openBoard = openBoard
+        _reminderHost = StateObject(wrappedValue: ReminderHostObservation(store: reminders, noteID: model.note.id))
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let invitation = note.body.isEmpty && !hasChecklist
             let available = max(0, geometry.size.height - stripHeight
-                - (model.diskIssue == nil ? 0 : 32) - (invitation ? 30 : 0))
+                - (model.diskIssue == nil ? 0 : 32) - (invitation ? 30 : 0)
+                - (reminderHost.connected ? 40 : 0))
             let bodyHeight = MinimalNoteLayout.bodyHeight(measuredHeight: measuredBodyHeight,
                                                          availableHeight: available,
                                                          hasChecklist: hasChecklist)
@@ -370,6 +381,9 @@ private struct MinimalStickyView: View {
                     }.buttonStyle(.plain).foregroundStyle(Ink.warning).padding(.horizontal, 10)
                         .frame(height: 32).help(issue)
                 }
+                ConnectedNoteContent(reminders: reminders, noteID: note.id, presentation: "desktop",
+                                     scrollingReminders: true, contentInset: 15, localFocusRequest: bodyFocusRequest) {
+                    VStack(spacing: 0) {
                 MinimalBodyEditor(text: model.binding(\.body), fontSize: contentFontSize,
                                   focusRequest: bodyFocusRequest, measuredHeight: $measuredBodyHeight)
                     .frame(maxWidth: .infinity).frame(height: bodyHeight)
@@ -395,6 +409,9 @@ private struct MinimalStickyView: View {
                     Color.clear.contentShape(Rectangle())
                         .onTapGesture { bodyFocusRequest += 1 }
                 }
+                    }
+                }.padding(.top, reminderHost.connected ? 8 : 0)
+
             }
         }
         .foregroundStyle(Ink.text)
@@ -409,6 +426,9 @@ private struct MinimalStickyView: View {
             .strokeBorder(appearance.effectiveGlass ? GlassStyle.line : Ink.text.opacity(0.2), lineWidth: 1)
             .allowsHitTesting(false))
         .environment(\.colorScheme, appearance.effectiveGlass ? systemScheme : .light)
+        .sheet(isPresented: $showingConnection) {
+            RemindersConnectionSheet(reminders: reminders, noteID: note.id, noteTitle: note.displayTitle, presentation: "desktop")
+        }
         .alert("Rename sticky", isPresented: $renaming) {
             TextField("Title", text: $titleDraft)
             Button("Cancel", role: .cancel) {}
@@ -446,6 +466,8 @@ private struct MinimalStickyView: View {
                     }
                 }
                 Divider()
+                RemindersNoteMenu(reminders: reminders, noteID: note.id, showingConnection: $showingConnection)
+                Divider()
                 Button("Open in Board", action: openBoard)
                 Button("Hide Sticky", action: close)
             } label: {
@@ -462,6 +484,7 @@ private struct MinimalStickyView: View {
     }
 
     private func beginTask() {
+        bodyFocusRequest += 1
         addingTask = true
         DispatchQueue.main.async { draftFocused = true }
     }

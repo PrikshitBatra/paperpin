@@ -290,6 +290,27 @@ private func checkGlassUnavailable(_ delegate: AppDelegate, directory: URL, chec
 func runWindowChecksIfRequested(_ delegate: AppDelegate) {
     guard let directory = ProcessInfo.processInfo.environment["PAPERPIN_TEST_DIRECTORY"] else { return }
     let url = URL(fileURLWithPath: directory, isDirectory: true)
+    if ProcessInfo.processInfo.environment["PAPERPIN_REMINDERS_ENERGY"] == "1" {
+        _ = prepareRemindersPreview(delegate)
+        delegate.window.close()
+        AppearanceSettings.shared.glassEnabled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            let fetches = delegate.reminders.fetchCount
+            let writes = delegate.reminders.preferenceWriteCount
+            DispatchQueue.main.asyncAfter(deadline: .now() + 335) {
+                print("ENERGY additional fetches=\(delegate.reminders.fetchCount - fetches) preference writes=\(delegate.reminders.preferenceWriteCount - writes)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        print("READY Reminders idle measurement"); fflush(stdout)
+        return
+    }
+    if ProcessInfo.processInfo.environment["PAPERPIN_REMINDERS_INTERACTIVE"] == "1" {
+        _ = prepareRemindersPreview(delegate)
+        print("READY Reminders preview (synthetic tasks only)"); fflush(stdout)
+        return
+    }
     if ProcessInfo.processInfo.environment["PAPERPIN_REORDER_INTERACTIVE"] == "1" {
         _ = prepareReorderPreview(delegate)
         print("READY reorder preview"); fflush(stdout)
@@ -321,6 +342,12 @@ func runWindowChecksIfRequested(_ delegate: AppDelegate) {
         func check(_ ok: Bool, _ name: String) {
             print("\(ok ? "PASS" : "FAIL") \(name)"); fflush(stdout)
             if !ok { failures += 1 }
+        }
+        if ProcessInfo.processInfo.environment["PAPERPIN_CHECK_REMINDERS"] == "1" {
+            await checkRemindersWindows(delegate, directory: url, check: check)
+            print("FINISHED \(failures) Reminders window failures"); fflush(stdout)
+            NSApp.terminate(nil)
+            return
         }
         if ProcessInfo.processInfo.environment["PAPERPIN_CHECK_REORDER"] == "1" {
             await checkReordering(delegate, directory: url, check: check)
@@ -638,7 +665,7 @@ private func checkMinimalMode(_ delegate: AppDelegate, directory: URL, check: (B
     let brokenFile = directory.appendingPathComponent("unreadable-board.json")
     try! Data("unreadable".utf8).write(to: brokenFile)
     let broken = BoardStore(file: brokenFile)
-    let recovery = MinimalWindowCoordinator(store: broken, navigation: Navigation(), openBoard: {}, defaults: isolated)
+    let recovery = MinimalWindowCoordinator(store: broken, navigation: Navigation(), reminders: delegate.reminders, openBoard: {}, defaults: isolated)
     recovery.setEnabled(true)
     check(broken.requiresFileRecovery && recovery.windows.isEmpty && recovery.savedOpenNoteIDs == [savedID]
           && isolated.dictionary(forKey: "MinimalWindowFrames")?[savedID.uuidString] as? String == savedFrame,

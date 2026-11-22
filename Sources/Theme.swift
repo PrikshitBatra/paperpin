@@ -189,6 +189,7 @@ struct TaskDraftRow<Field: View>: View {
 
 struct TaskCheck: View {
     let label: String
+    var completionHelp = "Complete task and move it to the archive"
     let action: () -> Void
     @State private var hovering = false
     @ObservedObject private var appearance = AppearanceSettings.shared
@@ -205,7 +206,7 @@ struct TaskCheck: View {
         .buttonStyle(.plain).foregroundStyle(Ink.secondary)
         .onHover { hovering = $0 }
         .accessibilityLabel("Complete \(label)")
-        .help("Complete task and move it to the archive")
+        .help(completionHelp)
     }
 }
 

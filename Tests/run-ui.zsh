@@ -12,9 +12,9 @@ cp "$project_dir/Info.plist" "$qa_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier local.paperpin.windowchecks' "$qa_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleName Paperpin Preview' "$qa_app/Contents/Info.plist"
 xcrun swiftc -sdk "$paperpin_sdk" -D PAPERPIN_QA -swift-version 5 -target "$(uname -m)-apple-macos13.0" \
-    "$project_dir"/Sources/*.swift "$project_dir/Tests/WindowChecks.swift" "$project_dir/Tests/PolishChecks.swift" "$project_dir/Tests/ReorderWindowChecks.swift" -o "$qa_app/Contents/MacOS/Paperpin"
+    "$project_dir"/Sources/*.swift "$project_dir/Tests/WindowChecks.swift" "$project_dir/Tests/PolishChecks.swift" "$project_dir/Tests/ReorderWindowChecks.swift" "$project_dir/Tests/RemindersFixture.swift" "$project_dir/Tests/RemindersWindowChecks.swift" -o "$qa_app/Contents/MacOS/Paperpin"
 codesign --force --sign - "$qa_app"
-for preference in DesktopMode SidebarHidden FloatBoard MinimalMode MinimalOpenNotes MinimalWindowFrames MinimalModeInitialized LiquidGlassEnabled; do
+for preference in DesktopMode SidebarHidden FloatBoard MinimalMode MinimalOpenNotes MinimalWindowFrames MinimalModeInitialized LiquidGlassEnabled RemindersConnection; do
     defaults delete local.paperpin.windowchecks "$preference" 2>/dev/null || true
 done
 if [[ "${PAPERPIN_CHECK_LAYOUT:-0}" == "1" ]]; then
@@ -29,7 +29,7 @@ fi
 PAPERPIN_TEST_DIRECTORY="$qa_dir" "$qa_app/Contents/MacOS/Paperpin" > "$qa_dir/results.txt" 2>&1
 cat "$qa_dir/results.txt"
 if /usr/bin/grep -q "^FAIL" "$qa_dir/results.txt"; then exit 1; fi
-if [[ "${PAPERPIN_REORDER_INTERACTIVE:-0}" == "1" ]]; then exit 0; fi
+if [[ "${PAPERPIN_REORDER_INTERACTIVE:-0}" == "1" || "${PAPERPIN_REMINDERS_INTERACTIVE:-0}" == "1" || "${PAPERPIN_REMINDERS_ENERGY:-0}" == "1" ]]; then exit 0; fi
 PAPERPIN_TEST_DIRECTORY="$qa_dir" PAPERPIN_VERIFY_RELAUNCH=1 "$qa_app/Contents/MacOS/Paperpin" > "$qa_dir/relaunch.txt" 2>&1
 cat "$qa_dir/relaunch.txt"
 if /usr/bin/grep -q "^FAIL" "$qa_dir/relaunch.txt"; then exit 1; fi
